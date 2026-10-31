@@ -67,6 +67,12 @@
 
 `go test -race ./...`는 현재 타깃 `windows/arm64`에서 지원되지 않아 실행하지 못했다. `govulncheck`는 설치되어 있지 않아 실행하지 않았다. 이 두 검사를 통과한 것으로 간주하지 않는다.
 
+### 후속 취약점 검사 — 2026-10-31
+
+로그·다국어 UI 변경 후 `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`으로 Go 도구 경로에 설치했다. 앱의 `go.mod`·`go.sum`은 변경하지 않았다. Go 1.27.3, Windows ARM64 구성에서 `govulncheck ./...`를 실행했고 결과는 `No vulnerabilities found.`였다. 사용한 Go 취약점 DB의 갱신 시각은 2026-10-27 21:16:18 UTC다.
+
+이는 해당 소스·빌드 구성에서 검사한 알려진 취약점의 결과다. 모든 플랫폼의 빌드, 별도 실행 중인 llama.cpp·Qdrant와 모든 보안 결함을 검사한 결과는 아니다. 운영 서버와 사용자 데이터에는 접근하지 않았다. race 검사의 플랫폼 제약은 그대로 남아 있다. 설치·검사 방식은 [Go 공식 안내](https://go.dev/doc/tutorial/govulncheck)를 따른다.
+
 ## 남은 제약
 
 - 전체 캐시 용량 관리와 비정상 종료 임시 파일 정리는 후속 작업이다. 현재 원본별 처리·압축 해제량·작업 수·시간 제한은 구현했다.

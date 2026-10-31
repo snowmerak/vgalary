@@ -1,3 +1,4 @@
+import { t, number } from './i18n';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   Archive,
@@ -24,7 +25,7 @@ function MediaCard({ result, onSelect }: { result: Result; onSelect: (result: Re
     <button
       className="media-card"
       onClick={() => onSelect(result)}
-      aria-label={`${filename(asset)} 자세히 보기`}
+      aria-label={t('{name} 자세히 보기', { name: filename(asset) })}
     >
       <div className="media-image">
         {result.thumbnail_url && !failed ? (
@@ -37,7 +38,7 @@ function MediaCard({ result, onSelect }: { result: Result; onSelect: (result: Re
         ) : (
           <div className="media-unavailable">
             {video ? <Film size={30} /> : <ImageIcon size={30} />}
-            <span>미리보기 없음</span>
+            <span>{t('미리보기 없음')}</span>
           </div>
         )}
         {video && (
@@ -48,7 +49,7 @@ function MediaCard({ result, onSelect }: { result: Result; onSelect: (result: Re
         )}
         <span className="media-open">
           <Eye size={15} />
-          자세히 보기
+          {t('자세히 보기')}
         </span>
       </div>
       <div className="media-caption">
@@ -57,8 +58,8 @@ function MediaCard({ result, onSelect }: { result: Result; onSelect: (result: Re
           {filename(asset)}
         </span>
         {result.score !== undefined && (
-          <span className="media-score" title="Cosine 유사도">
-            {result.score.toFixed(3)}
+          <span className="media-score" title={t('Cosine 유사도')}>
+            {number(result.score, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
           </span>
         )}
       </div>
@@ -168,7 +169,7 @@ export function SearchPage({
             key,
             items: previous?.baseKey === baseKey ? previous.items : [],
             hasMore: previous?.baseKey === baseKey ? previous.hasMore : false,
-            error: cause instanceof Error ? cause.message : '미디어를 불러오지 못했습니다.',
+            error: cause instanceof Error ? cause.message : t('미디어를 불러오지 못했습니다.'),
           }));
       }
     };
@@ -194,30 +195,30 @@ export function SearchPage({
   return (
     <section className="search-page">
       <div className="page-intro">
-        <h1>기억나는 장면을 찾아보세요.</h1>
-        <p>이미지와 영상, 압축 파일 속까지 자연어로 검색하세요.</p>
+        <h1>{t('기억나는 장면을 찾아보세요.')}</h1>
+        <p>{t('이미지와 영상, 압축 파일 속까지 자연어로 검색하세요.')}</p>
       </div>
       <form className="search-box" onSubmit={submit}>
         <Search size={24} strokeWidth={1.7} />
         <input
           ref={input}
-          aria-label="자연어 검색"
-          placeholder="파란 고양이 장난감"
+          aria-label={t('자연어 검색')}
+          placeholder={t('파란 고양이 장난감')}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
         <kbd>⌘ K</kbd>
         <button className="primary" type="submit" disabled={busy}>
-          {busy ? <Spinner /> : '검색'}
+          {busy ? <Spinner /> : t('검색')}
         </button>
       </form>
       <div className="filters">
-        <div className="segmented" aria-label="미디어 종류">
+        <div className="segmented" aria-label={t('미디어 종류')}>
           {(
             [
-              ['', '전체'],
-              ['image', '이미지'],
-              ['video', '영상'],
+              ['', t('전체')],
+              ['image', t('이미지')],
+              ['video', t('영상')],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -232,11 +233,11 @@ export function SearchPage({
         </div>
         <div className="select-wrap">
           <select
-            aria-label="검색 디렉토리"
+            aria-label={t('검색 디렉토리')}
             value={source}
             onChange={(event) => changeSource(event.target.value)}
           >
-            <option value="">모든 디렉토리</option>
+            <option value="">{t('모든 디렉토리')}</option>
             {sources.map((item) => (
               <option key={item.id} value={item.id}>
                 {sourceName(item)}
@@ -249,18 +250,18 @@ export function SearchPage({
       {error && <ErrorBanner message={error} retry={retry} />}
       <div className="results-heading">
         <h2>
-          {submitted ? '검색 결과' : '라이브러리'}
+          {submitted ? t('검색 결과') : t('라이브러리')}
           {submitted && <span>“{submitted}”</span>}
         </h2>
         <span>
-          {submitted ? '관련도순' : '최근 색인순'}
+          {submitted ? t('관련도순') : t('최근 색인순')}
           <ChevronDown size={14} />
         </span>
       </div>
       {busy && shown.length === 0 ? (
         <div className="loading">
           <Spinner />
-          {submitted ? '검색하고 있어요.' : '라이브러리를 불러오고 있어요.'}
+          {submitted ? t('검색하고 있어요.') : t('라이브러리를 불러오고 있어요.')}
         </div>
       ) : shown.length > 0 ? (
         <>
@@ -283,7 +284,7 @@ export function SearchPage({
                   }))
                 }
               >
-                {busy ? <Spinner /> : '더 보기'}
+                {busy ? <Spinner /> : t('더 보기')}
               </button>
             </div>
           )}
@@ -292,22 +293,24 @@ export function SearchPage({
         <Empty
           icon={submitted ? <Search size={30} /> : <Sparkles size={30} />}
           title={
-            submitted || kind || source ? '일치하는 미디어가 없어요.' : '나만의 라이브러리를 연결해 보세요.'
+            submitted || kind || source
+              ? t('일치하는 미디어가 없어요.')
+              : t('나만의 라이브러리를 연결해 보세요.')
           }
           action={
             !submitted &&
             !kind &&
             !source && (
               <button className="primary" onClick={goSources}>
-                디렉토리 추가
+                {t('디렉토리 추가')}
                 <ArrowUpRight size={16} />
               </button>
             )
           }
         >
           {submitted || kind || source
-            ? '다른 표현을 사용하거나 미디어 종류와 디렉토리 필터를 바꿔 보세요.'
-            : '서버의 디렉토리를 추가하고 색인을 시작하면 사진과 영상을 여기서 찾을 수 있어요.'}
+            ? t('다른 표현을 사용하거나 미디어 종류와 디렉토리 필터를 바꿔 보세요.')
+            : t('서버의 디렉토리를 추가하고 색인을 시작하면 사진과 영상을 여기서 찾을 수 있어요.')}
         </Empty>
       )}
     </section>

@@ -310,8 +310,57 @@ kbd,
   font-weight: 500;
   color: var(--ink);
 }
-.topbar > div span {
+.topbar .breadcrumb span {
   margin: 0 12px;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.language-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.language-picker select {
+  height: 34px;
+  max-width: 150px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.error-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.error-content details {
+  font-size: 12px;
+  margin-top: 5px;
+}
+.error-content summary {
+  cursor: pointer;
+}
+.error-content p {
+  white-space: pre-wrap;
+}
+.login-page > .language-picker,
+.startup > .language-picker {
+  position: absolute;
+  top: 32px;
+  right: 32px;
 }
 .topbar .text-button {
   font-size: 13px;
@@ -1503,6 +1552,22 @@ kbd,
   }
   .topbar .text-button svg {
     width: 15px;
+  }
+  .topbar .manage-directories {
+    display: none;
+  }
+  .topbar-actions {
+    gap: 8px;
+  }
+  .topbar .breadcrumb span {
+    margin: 0 5px;
+  }
+  .sidebar nav a {
+    gap: 5px;
+    padding-inline: 6px;
+  }
+  .sidebar nav a span {
+    overflow-wrap: anywhere;
   }
   .page-content {
     padding: 18px 20px 45px;

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,6 +41,12 @@ func (a *App) indexSource(ctx context.Context, job *Job) error {
 		return err
 	}
 	job.ProfileID = profileID
+	if o := executionOf(ctx).observation; o != nil {
+		o.mu.Lock()
+		o.profile = profileID
+		o.mu.Unlock()
+	}
+	ctx = bindLog(ctx, slog.String("profile_id", profileID))
 	work, err := os.MkdirTemp(filepath.Join(a.dir, "tmp"), "scan-"+job.ID+"-")
 	if err != nil {
 		return err
@@ -49,20 +56,23 @@ func (a *App) indexSource(ctx context.Context, job *Job) error {
 	reused := map[string][]float32{}
 	report := walkSource(ctx, source, work, cfg.Processing, func(file discoveredFile) error {
 		job.Discovered++
-		err := a.indexFile(ctx, source, file, work, profile, remote, job, reused)
+		updateCounters(ctx, job)
+		err := atStage(ctx, a.indexFile(ctx, source, file, work, profile, remote, job, reused))
+		setStage(ctx, "catalog.progress")
 		if saveErr := a.store.put(ctx, "job", job.ID, job); saveErr != nil {
-			return saveErr
+			return fail(saveErr, nil, "catalog_write_failed", "catalog.progress", "sqlite")
 		}
 		return err
 	})
 	job.Cycles = report.Cycles
 	job.IssueCount = len(report.Issues)
 	job.Issues = report.Issues[:min(len(report.Issues), 100)]
+	updateCounters(ctx, job)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if !report.Complete {
-		return fmt.Errorf("scan incomplete: %d issue(s); previous unseen assets retained", len(report.Issues))
+		return fail(fmt.Errorf("scan incomplete: %d issue(s); previous unseen assets retained", len(report.Issues)), nil, "scan_incomplete", "discover", "")
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -86,6 +96,7 @@ func (a *App) indexSource(ctx context.Context, job *Job) error {
 	if err := a.store.put(ctx, "source_profile", source.ID+"_"+profileID, true); err != nil {
 		return err
 	}
+	emit(ctx, slog.LevelInfo, "profile.ready")
 	var activeProfile string
 	if err := a.store.get(ctx, "meta", "active_profile", &activeProfile); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -98,19 +109,46 @@ func (a *App) indexSource(ctx context.Context, job *Job) error {
 		for _, registered := range sources {
 			var ready bool
 			if err := a.store.get(ctx, "source_profile", registered.ID+"_"+profileID, &ready); errors.Is(err, sql.ErrNoRows) {
+				emit(ctx, slog.LevelInfo, "profile.waiting", slog.String("reason", "source_pending"))
 				return nil
 			} else if err != nil {
 				return err
 			}
 			if !ready {
+				emit(ctx, slog.LevelInfo, "profile.waiting", slog.String("reason", "source_pending"))
 				return nil
 			}
 		}
 	}
-	return a.store.put(ctx, "meta", "active_profile", profileID)
+	if err := a.store.put(ctx, "meta", "active_profile", profileID); err != nil {
+		return err
+	}
+	if activeProfile != profileID {
+		emit(ctx, slog.LevelInfo, "profile.activated")
+	}
+	return nil
 }
 
-func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile, work string, profile Profile, remote *remoteClient, job *Job, reused map[string][]float32) error {
+func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile, work string, profile Profile, remote *remoteClient, job *Job, reused map[string][]float32) (resultErr error) {
+	assetID := stableID(source.ID, file.Location, profile.ID)
+	ctx = bindLog(ctx, slog.String("asset_id", assetID), slog.String("relative_path", locationText(file.Location)))
+	if o := executionOf(ctx).observation; o != nil {
+		o.mu.Lock()
+		o.asset = assetID
+		o.mu.Unlock()
+	}
+	started, skipped := time.Now(), job.Skipped
+	defer func() {
+		updateCounters(ctx, job)
+		if resultErr == nil {
+			result := "indexed"
+			if job.Skipped > skipped {
+				result = "reused"
+			}
+			emit(ctx, slog.LevelDebug, "file.processed", slog.String("result", result), slog.Int64("duration_ms", time.Since(started).Milliseconds()))
+			progressed(ctx)
+		}
+	}()
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -129,6 +167,7 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 	if err != nil {
 		return err
 	}
+	setStage(ctx, "hash")
 	revision, err := hashFile(ctx, file.Path)
 	if err != nil {
 		return err
@@ -215,6 +254,7 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 			}
 			jpeg, _ = os.ReadFile(filepath.Join(a.dir, "thumbnails", reuse.Points[i].ID+".jpg"))
 		} else {
+			setStage(ctx, "image.decode")
 			jpeg, err = imageJPEG(images[i], remote.cfg.Processing)
 			if err != nil {
 				return err
@@ -228,6 +268,7 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 					return err
 				}
 				job.Embedded++
+				updateCounters(ctx, job)
 				if len(reused) >= 64 {
 					clear(reused)
 				}

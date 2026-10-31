@@ -1,3 +1,5 @@
+import { t, useLocale } from './i18n';
+import { LanguagePicker } from './LanguagePicker';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Folder, List, LockKeyhole, LogOut, Search, Settings as SettingsIcon } from 'lucide-react';
 import { post } from './api';
@@ -22,7 +24,7 @@ function currentPage(): Page {
 }
 function Brand() {
   return (
-    <a href="#search" className="brand" aria-label="vgalary 홈">
+    <a href="#search" className="brand" aria-label={t('vgalary 홈')}>
       <span className="brand-symbol" aria-hidden="true" />
       <span>vgalary</span>
     </a>
@@ -49,13 +51,14 @@ function Login({
   return (
     <main className="login-page">
       <Brand />
+      <LanguagePicker />
       <div className="login-content">
         <LockKeyhole size={28} strokeWidth={1.5} />
-        <h1>나의 라이브러리에 들어가기</h1>
-        <p>계속하려면 서버에 설정한 비밀번호를 입력해 주세요.</p>
+        <h1>{t('나의 라이브러리에 들어가기')}</h1>
+        <p>{t('계속하려면 서버에 설정한 비밀번호를 입력해 주세요.')}</p>
         <form onSubmit={submit}>
           <label className="field">
-            <span>비밀번호</span>
+            <span>{t('비밀번호')}</span>
             <input
               autoFocus
               required
@@ -66,7 +69,7 @@ function Login({
             />
           </label>
           <button className="primary" disabled={pending.has('login')}>
-            {pending.has('login') ? <Spinner /> : '로그인'}
+            {pending.has('login') ? <Spinner /> : t('로그인')}
           </button>
         </form>
       </div>
@@ -119,7 +122,7 @@ function Library({
     <div className="app-shell">
       <aside className="sidebar">
         <Brand />
-        <nav aria-label="주 메뉴">
+        <nav aria-label={t('주 메뉴')}>
           {navigation.map((item) => (
             <a
               key={item.id}
@@ -128,14 +131,14 @@ function Library({
               aria-current={page === item.id ? 'page' : undefined}
             >
               <item.icon size={21} strokeWidth={1.65} />
-              <span>{item.label}</span>
+              <span>{t(item.label)}</span>
             </a>
           ))}
         </nav>
         <footer>
           <div className="library-status">
             <span className={`status-dot ${connected ? '' : 'offline'}`} />
-            {connected ? '라이브러리 연결됨' : '연결 확인 중'}
+            {connected ? t('라이브러리 연결됨') : t('연결 확인 중')}
           </div>
           {session.auth_required && (
             <button
@@ -147,20 +150,24 @@ function Library({
               }
             >
               <LogOut size={15} />
-              로그아웃
+              {t('로그아웃')}
             </button>
           )}
         </footer>
       </aside>
       <div className="workspace">
         <header className="topbar">
-          <div>
-            라이브러리 <span>/</span> <strong>{navigation.find((item) => item.id === page)?.label}</strong>
+          <div className="breadcrumb">
+            {t('라이브러리')}
+            <span>/</span> <strong>{t(navigation.find((item) => item.id === page)!.label)}</strong>
           </div>
-          <button className="text-button" onClick={() => navigate('sources')}>
-            <Folder size={17} />
-            디렉토리 관리
-          </button>
+          <div className="topbar-actions">
+            <LanguagePicker />
+            <button className="text-button manage-directories" onClick={() => navigate('sources')}>
+              <Folder size={17} />
+              {t('디렉토리 관리')}
+            </button>
+          </div>
         </header>
         <main className="page-content">
           {settings.error && <ErrorBanner message={settings.error} retry={settings.refresh} />}
@@ -206,7 +213,7 @@ function Library({
               !settings.error && (
                 <div className="loading">
                   <Spinner />
-                  설정을 불러오고 있어요.
+                  {t('설정을 불러오고 있어요.')}
                 </div>
               )
             ))}
@@ -225,6 +232,18 @@ function Library({
 }
 
 export default function App() {
+  // The root subscribes so locale changes rerender all pages without resetting their state.
+  const locale = useLocale();
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = `vgalary — ${t('나의 미디어 라이브러리')}`;
+    document
+      .querySelector('meta[name="description"]')
+      ?.setAttribute(
+        'content',
+        t('폴더와 압축 파일 속 이미지와 영상을 자연어로 찾는 나만의 미디어 라이브러리'),
+      );
+  }, [locale]);
   const session = useResource<Session>('/session');
   const refreshSession = session.refresh;
   const [notice, setNotice] = useState<{ message: string; error?: boolean; id: number } | null>(null);
@@ -253,12 +272,13 @@ export default function App() {
       ) : (
         <main className="startup">
           <Brand />
+          <LanguagePicker />
           {session.error ? (
             <ErrorBanner message={session.error} retry={session.refresh} />
           ) : (
             <div className="loading">
               <Spinner />
-              라이브러리를 연결하고 있어요.
+              {t('라이브러리를 연결하고 있어요.')}
             </div>
           )}
         </main>

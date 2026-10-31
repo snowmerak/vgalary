@@ -14,7 +14,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     headers: { 'Content-Type': 'application/json', ...options.headers },
   });
   if (!response.ok) {
-    let message = `요청을 처리하지 못했습니다. (${response.status})`;
+    let message = response.statusText || 'Request failed';
     try {
       const body = await response.json();
       message = body.error || message;
@@ -23,7 +23,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     }
     if (response.status === 401 && !path.startsWith('/login'))
       window.dispatchEvent(new Event('vgalary:unauthorized'));
-    throw new ApiError(message, response.status);
+    throw new ApiError(`[HTTP ${response.status}] ${message}`, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

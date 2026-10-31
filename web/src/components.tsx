@@ -1,8 +1,9 @@
+import { t, errorSummary } from './i18n';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Check, CircleAlert, LoaderCircle, X } from 'lucide-react';
 
 export function Spinner() {
-  return <LoaderCircle className="spin" size={18} aria-label="처리 중" />;
+  return <LoaderCircle className="spin" size={18} aria-label={t('처리 중')} />;
 }
 export function Empty({
   icon,
@@ -28,10 +29,16 @@ export function ErrorBanner({ message, retry }: { message: string; retry?: () =>
   return (
     <div className="error-banner" role="alert">
       <CircleAlert size={18} />
-      <span>{message}</span>
+      <div className="error-content">
+        <span>{errorSummary(message)}</span>
+        <details>
+          <summary>{t('기술 정보')}</summary>
+          <p>{message}</p>
+        </details>
+      </div>
       {retry && (
         <button className="text-button" onClick={retry}>
-          다시 시도
+          {t('다시 시도')}
         </button>
       )}
     </div>
@@ -91,7 +98,7 @@ export function Modal({
       <div className="modal-body">
         <header className="modal-header">
           <h2>{title}</h2>
-          <button className="icon-button" aria-label="닫기" onClick={onClose}>
+          <button className="icon-button" aria-label={t('닫기')} onClick={onClose}>
             <X size={20} />
           </button>
         </header>
@@ -104,8 +111,18 @@ export function Toast({ message, error, close }: { message: string; error?: bool
   return (
     <div className={`toast ${error ? 'toast-error' : ''}`} role={error ? 'alert' : 'status'}>
       {error ? <CircleAlert size={18} /> : <Check size={18} />}
-      <span>{message}</span>
-      <button onClick={close} className="icon-button" aria-label="알림 닫기">
+      {error ? (
+        <div className="error-content">
+          <span>{errorSummary(message)}</span>
+          <details>
+            <summary>{t('기술 정보')}</summary>
+            <p>{message}</p>
+          </details>
+        </div>
+      ) : (
+        <span>{message}</span>
+      )}
+      <button onClick={close} className="icon-button" aria-label={t('알림 닫기')}>
         <X size={16} />
       </button>
     </div>

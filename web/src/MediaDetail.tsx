@@ -1,3 +1,4 @@
+import { t, number } from './i18n';
 import { useRef, useState } from 'react';
 import { Archive, Copy, Download, Film, FolderOutput, Image as ImageIcon } from 'lucide-react';
 import { post } from './api';
@@ -38,7 +39,7 @@ export function MediaDetail({
   };
   const copy = async () => {
     await navigator.clipboard.writeText(result.path);
-    notify('원본 경로를 복사했습니다.');
+    notify(t('원본 경로를 복사했습니다.'));
   };
   return (
     <Modal title={filename(asset)} onClose={onClose} className="media-modal">
@@ -61,60 +62,60 @@ export function MediaDetail({
           ) : (
             <div className="media-unavailable">
               {isVideo ? <Film size={34} /> : <ImageIcon size={34} />}
-              <span>미리보기를 사용할 수 없어요.</span>
+              <span>{t('미리보기를 사용할 수 없어요.')}</span>
             </div>
           )}
           {failed && isVideo && !archived && (
-            <p>이 브라우저가 지원하지 않는 영상일 수 있어요. 원본을 다운로드해 주세요.</p>
+            <p>{t('이 브라우저가 지원하지 않는 영상일 수 있어요. 원본을 다운로드해 주세요.')}</p>
           )}
         </div>
         <div className="detail-info">
           <span className="detail-kind">
             {archived && <Archive size={15} />}
-            {isVideo ? '영상' : '이미지'}
-            {archived ? ' · 압축 파일 내부' : ''}
+            {isVideo ? t('영상') : t('이미지')}
+            {archived ? ` · ${t('압축 파일 내부')}` : ''}
           </span>
           <h3>{filename(asset)}</h3>
           <dl>
             <div>
-              <dt>파일 크기</dt>
+              <dt>{t('파일 크기')}</dt>
               <dd>{bytes(asset.size)}</dd>
             </div>
             {result.score !== undefined && (
               <div>
-                <dt>검색 유사도</dt>
-                <dd>{result.score.toFixed(4)}</dd>
+                <dt>{t('검색 유사도')}</dt>
+                <dd>{number(result.score, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</dd>
               </div>
             )}
             {isVideo && (
               <>
                 <div>
-                  <dt>색인된 프레임</dt>
-                  <dd>{asset.points.length}개</dd>
+                  <dt>{t('색인된 프레임')}</dt>
+                  <dd>{t('{count}개', { count: asset.points.length })}</dd>
                 </div>
                 <div>
-                  <dt>선택 시점</dt>
+                  <dt>{t('선택 시점')}</dt>
                   <dd className="mono">{timestamp(point?.timestamp_ms || 0)}</dd>
                 </div>
               </>
             )}
           </dl>
           <div className="path-field">
-            <label>원본 경로</label>
+            <label>{t('원본 경로')}</label>
             <p>{result.path}</p>
             <button className="text-button" onClick={() => void run('copy', copy)}>
               <Copy size={14} />
-              경로 복사
+              {t('경로 복사')}
             </button>
           </div>
           {archived && (
             <p className="hint">
-              압축 내부 항목은 저장된 미리보기만 표시합니다. 원본은 다운로드할 때 추출합니다.
+              {t('압축 내부 항목은 저장된 미리보기만 표시합니다. 원본은 다운로드할 때 추출합니다.')}
             </p>
           )}
           {isVideo && (
             <div className="frame-section">
-              <label>색인된 장면</label>
+              <label>{t('색인된 장면')}</label>
               <div className="frame-list">
                 {asset.points.map((item) => (
                   <button
@@ -130,11 +131,11 @@ export function MediaDetail({
           )}
           <a className="primary download-button" href={`/api/assets/${asset.id}/download`}>
             <Download size={16} />
-            원본 다운로드
+            {t('원본 다운로드')}
           </a>
           <button className="secondary" onClick={() => setExporting((value) => !value)}>
             <FolderOutput size={16} />
-            서버 디렉토리로 가져오기
+            {t('서버 디렉토리로 가져오기')}
           </button>
           {exporting && (
             <form
@@ -145,12 +146,12 @@ export function MediaDetail({
                   const response = await post<{ path: string }>(`/assets/${asset.id}/export`, {
                     directory: exportDirectory,
                   });
-                  notify(`파일을 저장했습니다: ${response.path}`);
+                  notify(t('파일을 저장했습니다: {path}', { path: response.path }));
                   setExporting(false);
                 });
               }}
             >
-              <label htmlFor="export-directory">서버의 저장 디렉토리</label>
+              <label htmlFor="export-directory">{t('서버의 저장 디렉토리')}</label>
               <input
                 id="export-directory"
                 required
@@ -159,9 +160,9 @@ export function MediaDetail({
                 onChange={(event) => setExportDirectory(event.target.value)}
               />
               <button className="primary" disabled={pending.has('export')}>
-                {pending.has('export') ? <Spinner /> : '가져오기'}
+                {pending.has('export') ? <Spinner /> : t('가져오기')}
               </button>
-              <p className="hint">이미 존재하는 디렉토리를 입력해 주세요. 원본은 유지됩니다.</p>
+              <p className="hint">{t('이미 존재하는 디렉토리를 입력해 주세요. 원본은 유지됩니다.')}</p>
             </form>
           )}
         </div>

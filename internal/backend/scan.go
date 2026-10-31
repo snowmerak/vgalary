@@ -8,10 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/nwaples/rardecode/v2"
 )
@@ -132,6 +135,15 @@ func walkSource(ctx context.Context, source Source, workDir string, p Processing
 	issue := func(loc Location, code string, err error) {
 		report.Complete = false
 		report.Issues = append(report.Issues, JobIssue{Location: locationText(loc), Code: code, Message: err.Error()})
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		attrs := append(itemFields(ctx), slog.String("error_code", code), slog.String("relative_path", locationText(loc)), slog.Int("archive_depth", len(loc.ArchiveEntries)))
+		var detail *failure
+		if errors.As(err, &detail) {
+			attrs = append(attrs, failureFields(err)...)
+		}
+		emit(ctx, slog.LevelWarn, "file.failed", attrs...)
 	}
 	root, err := realPath(source.RootPath)
 	if err != nil {
@@ -147,6 +159,13 @@ func walkSource(ctx context.Context, source Source, workDir string, p Processing
 		}
 		task := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+		setStage(ctx, "discover")
+		if o := executionOf(ctx).observation; o != nil {
+			o.mu.Lock()
+			o.item = uuid.NewString()
+			o.asset = ""
+			o.mu.Unlock()
+		}
 		budget.entries++
 		if budget.entries > p.MaxEntries {
 			issue(task.Location, "resource_limit_exceeded", errors.New("entry count limit reached"))
@@ -200,6 +219,7 @@ func walkSource(ctx context.Context, source Source, workDir string, p Processing
 		}
 		kind := mediaType(task.Path)
 		if kind == "zip" || kind == "rar" {
+			setStage(ctx, "archive.read")
 			if info.Size() > p.MaxEntryBytes {
 				issue(task.Location, "resource_limit_exceeded", errors.New("archive size limit reached"))
 				continue

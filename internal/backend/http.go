@@ -30,6 +30,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func apiError(w http.ResponseWriter, status int, err error) {
+	if recorder, ok := w.(interface{ diagnosticFailure(error) }); ok {
+		recorder.diagnosticFailure(err)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		status = 404
 	}
@@ -223,7 +226,7 @@ func (a *App) HandlerWithOptions(options HTTPOptions) (http.Handler, error) {
 		apiError(w, 403, errors.New("cross-origin request rejected"))
 	}))
 	protected := originProtection.Handler(access.protect(mux))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return a.logHTTP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
@@ -238,7 +241,7 @@ func (a *App) HandlerWithOptions(options HTTPOptions) (http.Handler, error) {
 			return
 		}
 		protected.ServeHTTP(w, r)
-	}), nil
+	})), nil
 }
 func (a *App) getSettings(w http.ResponseWriter, r *http.Request) {
 	s := a.Settings()

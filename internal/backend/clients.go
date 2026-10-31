@@ -8,13 +8,25 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var errRemoteNotFound = errors.New("remote resource not found")
+
+type operationKey struct{}
+type operationMeta struct{ operation, dependency string }
+
+func operationContext(ctx context.Context, operation, dependency string) context.Context {
+	return context.WithValue(ctx, operationKey{}, operationMeta{operation, dependency})
+}
 
 type remoteClient struct {
 	http *http.Client
@@ -26,7 +38,26 @@ func newRemote(cfg resolvedSettings) *remoteClient {
 }
 
 // Only status codes are included in errors; provider bodies may contain credentials or input media.
-func (c *remoteClient) request(ctx context.Context, method, address, key, authHeader string, body, out any) error {
+func (c *remoteClient) request(ctx context.Context, method, address, key, authHeader string, body, out any) (resultErr error) {
+	meta, _ := ctx.Value(operationKey{}).(operationMeta)
+	started := time.Now()
+	attempts := 0
+	ctx = bindLog(ctx, slog.String("operation_id", uuid.NewString()), slog.String("dependency", meta.dependency), slog.String("operation", meta.operation))
+	setStage(ctx, meta.operation)
+	defer func() {
+		result := "succeeded"
+		if resultErr != nil {
+			result = "failed"
+		}
+		if errors.Is(resultErr, errRemoteNotFound) {
+			result = "not_found"
+		}
+		attrs := append(failureFields(resultErr), slog.String("result", result), slog.Int("attempts", attempts), slog.Int64("duration_ms", time.Since(started).Milliseconds()))
+		emit(ctx, slog.LevelDebug, "dependency.finished", attrs...)
+		if resultErr == nil {
+			progressed(ctx)
+		}
+	}()
 	var data []byte
 	var err error
 	if body != nil {
@@ -36,6 +67,7 @@ func (c *remoteClient) request(ctx context.Context, method, address, key, authHe
 		}
 	}
 	for attempt := 0; attempt < 3; attempt++ {
+		attempts = attempt + 1
 		req, err := http.NewRequestWithContext(ctx, method, address, bytes.NewReader(data))
 		if err != nil {
 			return err
@@ -66,12 +98,17 @@ func (c *remoteClient) request(ctx context.Context, method, address, key, authHe
 			_, _ = io.Copy(io.Discard, limited)
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusNotFound {
-				return errRemoteNotFound
+				return fail(errRemoteNotFound, nil, "remote_not_found", meta.operation, meta.dependency, slog.Int("http_status", 404), slog.Int("attempts", attempts))
 			}
-			err = fmt.Errorf("remote HTTP %d", resp.StatusCode)
+			err = fail(fmt.Errorf("remote HTTP %d", resp.StatusCode), nil, "remote_http", meta.operation, meta.dependency, slog.Int("http_status", resp.StatusCode), slog.Int("attempts", attempts))
 			retry = resp.StatusCode == 429 || resp.StatusCode >= 500
 		} else {
-			err = fmt.Errorf("remote connection failed")
+			code := "network_error"
+			var network net.Error
+			if errors.As(callErr, &network) && network.Timeout() {
+				code = "request_timeout"
+			}
+			err = fail(fmt.Errorf("remote connection failed"), callErr, code, meta.operation, meta.dependency, slog.Int("attempts", attempts))
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -79,7 +116,9 @@ func (c *remoteClient) request(ctx context.Context, method, address, key, authHe
 		if !retry || attempt == 2 {
 			return err
 		}
-		timer := time.NewTimer(time.Duration(1<<attempt) * 250 * time.Millisecond)
+		delay := time.Duration(1<<attempt) * 250 * time.Millisecond
+		emit(ctx, slog.LevelWarn, "dependency.retry", append(failureFields(err), slog.Int("attempt", attempts), slog.Int64("retry_delay_ms", delay.Milliseconds()))...)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -118,12 +157,13 @@ func (c *remoteClient) embed(ctx context.Context, input any) ([]float32, error) 
 	return vector, nil
 }
 func (c *remoteClient) embedText(ctx context.Context, text string) ([]float32, error) {
-	return c.embed(ctx, c.cfg.Embedding.QueryPrefix+text)
+	return c.embed(operationContext(ctx, "embedding.text", "embedding"), c.cfg.Embedding.QueryPrefix+text)
 }
 func (c *remoteClient) embedImage(ctx context.Context, jpeg []byte) ([]float32, error) {
-	return c.embed(ctx, []any{map[string]any{"content": []any{map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpeg)}}}}})
+	return c.embed(operationContext(ctx, "embedding.image", "embedding"), []any{map[string]any{"content": []any{map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpeg)}}}}})
 }
 func (c *remoteClient) models(ctx context.Context) (any, error) {
+	ctx = operationContext(ctx, "embedding.models", "embedding")
 	var out struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -133,6 +173,18 @@ func (c *remoteClient) models(ctx context.Context) (any, error) {
 	return out, err
 }
 func (c *remoteClient) qdrant(ctx context.Context, method, path string, body, out any) error {
+	operation := "qdrant.collection"
+	switch {
+	case strings.HasSuffix(path, "/points/query"):
+		operation = "qdrant.query"
+	case strings.HasSuffix(path, "/points/delete"):
+		operation = "qdrant.delete"
+	case strings.HasSuffix(path, "/points"):
+		operation = "qdrant.upsert"
+	case strings.Contains(path, "/points/"):
+		operation = "qdrant.point"
+	}
+	ctx = operationContext(ctx, operation, "qdrant")
 	return c.request(ctx, method, c.cfg.QdrantURL+path, c.cfg.QdrantKey, "api-key", body, out)
 }
 func collectionPath(name string) string { return "/collections/" + url.PathEscape(name) }

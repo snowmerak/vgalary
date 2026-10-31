@@ -12,6 +12,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -19,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
@@ -42,7 +45,21 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func runMedia(ctx context.Context, p ProcessingSettings, exe string, args ...string) ([]byte, error) {
+func runMedia(ctx context.Context, p ProcessingSettings, exe string, args ...string) (data []byte, resultErr error) {
+	ctx = bindLog(ctx, slog.String("operation_id", uuid.NewString()))
+	dependency, operation := "ffmpeg", "media.frames"
+	if exe == p.FFprobe {
+		dependency, operation = "ffprobe", "media.probe"
+	}
+	ctx = operationContext(ctx, operation, dependency)
+	setStage(ctx, operation)
+	started := time.Now()
+	defer func() {
+		emit(ctx, slog.LevelDebug, "media.finished", append(failureFields(resultErr), slog.String("dependency", dependency), slog.String("operation", operation), slog.Int64("duration_ms", time.Since(started).Milliseconds()), slog.String("result", operationResult(resultErr)))...)
+		if resultErr == nil {
+			progressed(ctx)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(p.ProcessTimeoutSeconds)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, args...)
@@ -52,9 +69,18 @@ func runMedia(ctx context.Context, p ProcessingSettings, exe string, args ...str
 	cmd.Stderr = diagnostic
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			code := "canceled"
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				code = "process_timeout"
+			}
+			return nil, fail(ctx.Err(), nil, code, operation, dependency)
 		}
-		return nil, fmt.Errorf("media process failed (%s)", filepath.Base(exe))
+		attrs := []slog.Attr{}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			attrs = append(attrs, slog.Int("exit_code", exit.ExitCode()))
+		}
+		return nil, fail(fmt.Errorf("media process failed (%s)", filepath.Base(exe)), err, "media_process_failed", operation, dependency, attrs...)
 	}
 	if out.overflow {
 		return nil, errors.New("media probe output exceeded limit")
@@ -229,12 +255,27 @@ func videoFrames(ctx context.Context, path, dir string, p ProcessingSettings) ([
 	if len(refs) == 0 {
 		return nil, nil, errors.New("no_idr_found")
 	}
-	return selectChangedFrames(ctx, refs, selected, p.VideoFrameChangeThreshold)
+	setStage(ctx, "media.frame_selection")
+	chosen, paths, err := selectChangedFrames(ctx, refs, selected, p.VideoFrameChangeThreshold)
+	if err == nil {
+		emit(ctx, slog.LevelDebug, "media.frames_selected", slog.Int("candidates", len(refs)), slog.Int("selected", len(chosen)), slog.Float64("threshold", p.VideoFrameChangeThreshold))
+	}
+	return chosen, paths, err
 }
 
 // idrPackets parses packet bytes, never equating the container key flag with IDR.
 // ffprobe is streamed so an entire video's hex dump is not retained in memory.
-func idrPackets(ctx context.Context, path, codec string, nalLengthSize int, p ProcessingSettings) (map[string]bool, error) {
+func idrPackets(ctx context.Context, path, codec string, nalLengthSize int, p ProcessingSettings) (packets map[string]bool, resultErr error) {
+	parentCtx := ctx
+	ctx = bindLog(ctx, slog.String("operation_id", uuid.NewString()))
+	started := time.Now()
+	setStage(ctx, "media.packets")
+	defer func() {
+		emit(ctx, slog.LevelDebug, "media.finished", append(failureFields(resultErr), slog.String("dependency", "ffprobe"), slog.String("operation", "media.packets"), slog.Int64("duration_ms", time.Since(started).Milliseconds()), slog.String("result", operationResult(resultErr)))...)
+		if resultErr == nil {
+			progressed(ctx)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(p.ProcessTimeoutSeconds)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, p.FFprobe, "-v", "error", "-select_streams", "V:0", "-show_packets", "-show_data", "-show_entries", "packet=pts,flags,data", "-of", "json", path)
@@ -305,11 +346,22 @@ func idrPackets(ctx context.Context, path, codec string, nalLengthSize int, p Pr
 		cancel()
 	}
 	waitErr := cmd.Wait()
+	if parentCtx.Err() != nil {
+		return nil, parentCtx.Err()
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, fail(ctx.Err(), nil, "process_timeout", "media.packets", "ffprobe")
+	}
 	if parseErr != nil {
 		return nil, fmt.Errorf("IDR packet parse: %w", parseErr)
 	}
 	if waitErr != nil {
-		return nil, fmt.Errorf("IDR probe failed: %w", waitErr)
+		attrs := []slog.Attr{}
+		var exit *exec.ExitError
+		if errors.As(waitErr, &exit) {
+			attrs = append(attrs, slog.Int("exit_code", exit.ExitCode()))
+		}
+		return nil, fail(fmt.Errorf("IDR probe failed: %w", waitErr), waitErr, "media_process_failed", "media.packets", "ffprobe", attrs...)
 	}
 	return result, nil
 }

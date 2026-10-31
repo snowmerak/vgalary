@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowUp, ChevronRight, Folder, Home, RefreshCw } from 'lucide-react';
 import { api } from './api';
@@ -46,7 +47,7 @@ export function DirectoryPicker({
           setResult((previous) => ({
             key,
             data: previous?.data,
-            error: cause instanceof Error ? cause.message : '폴더를 불러오지 못했습니다.',
+            error: cause instanceof Error ? cause.message : t('폴더를 불러오지 못했습니다.'),
           }));
       });
     return () => controller.abort();
@@ -58,16 +59,18 @@ export function DirectoryPicker({
     navigate(draft);
   };
   return (
-    <Modal title="서버 폴더 선택" onClose={onClose} className="directory-picker">
+    <Modal title={t('서버 폴더 선택')} onClose={onClose} className="directory-picker">
       <div className="picker-content">
-        <p className="hint">앱이 실행되는 서버의 폴더를 탐색합니다. 원하는 폴더를 연 다음 선택해 주세요.</p>
-        <label htmlFor="picker-path">폴더 경로</label>
+        <p className="hint">
+          {t('앱이 실행되는 서버의 폴더를 탐색합니다. 원하는 폴더를 연 다음 선택해 주세요.')}
+        </p>
+        <label htmlFor="picker-path">{t('폴더 경로')}</label>
         <form className="picker-path-form" onSubmit={submit}>
           <button
             type="button"
             className="icon-button"
-            aria-label="상위 폴더로 이동"
-            title="상위 폴더"
+            aria-label={t('상위 폴더로 이동')}
+            title={t('상위 폴더')}
             disabled={pending || !data?.parent}
             onClick={() => data && navigate(data.parent)}
           >
@@ -82,15 +85,15 @@ export function DirectoryPicker({
             spellCheck={false}
           />
           <button className="secondary" disabled={pending}>
-            이동
+            {t('이동')}
           </button>
         </form>
         <div className="picker-shortcuts">
-          <label htmlFor="picker-root">빠른 위치</label>
+          <label htmlFor="picker-root">{t('빠른 위치')}</label>
           <button
             type="button"
             className="icon-button"
-            aria-label="홈 폴더로 이동"
+            aria-label={t('홈 폴더로 이동')}
             disabled={pending}
             onClick={() => navigate('')}
           >
@@ -105,29 +108,29 @@ export function DirectoryPicker({
             }}
           >
             <option value="" disabled>
-              홈 또는 드라이브 선택
+              {t('홈 또는 드라이브 선택')}
             </option>
             {data?.roots.map((root) => (
               <option key={root} value={root}>
-                {root === data.home ? '홈' : root}
+                {root === data.home ? t('홈') : root}
               </option>
             ))}
           </select>
           <button
             type="button"
             className="icon-button"
-            aria-label="폴더 목록 새로 고침"
+            aria-label={t('폴더 목록 새로 고침')}
             disabled={pending}
             onClick={() => navigate(request.path, request.offset)}
           >
             <RefreshCw size={17} />
           </button>
         </div>
-        <div className="picker-list" aria-label="하위 폴더" aria-busy={pending}>
+        <div className="picker-list" aria-label={t('하위 폴더')} aria-busy={pending}>
           {pending ? (
             <div className="loading" role="status">
               <Spinner />
-              폴더를 불러오고 있어요.
+              {t('폴더를 불러오고 있어요.')}
             </div>
           ) : error ? (
             <ErrorBanner message={error} retry={() => navigate(request.path, request.offset)} />
@@ -137,7 +140,7 @@ export function DirectoryPicker({
                 type="button"
                 key={entry.path}
                 className="picker-entry"
-                aria-label={`${entry.name} 열기`}
+                aria-label={t('{name} 열기', { name: entry.name })}
                 onClick={() => navigate(entry.path)}
               >
                 <Folder size={19} />
@@ -146,12 +149,12 @@ export function DirectoryPicker({
               </button>
             ))
           ) : (
-            <p className="picker-empty">하위 폴더가 없습니다. 이 폴더를 선택할 수 있어요.</p>
+            <p className="picker-empty">{t('하위 폴더가 없습니다. 이 폴더를 선택할 수 있어요.')}</p>
           )}
         </div>
         {ready && data && (
           <div className="picker-pagination">
-            <span>하위 폴더 {data.total.toLocaleString()}개</span>
+            <span>{t('하위 폴더 {count}개', { count: data.total })}</span>
             {data.total > data.limit && (
               <div>
                 <button
@@ -160,7 +163,7 @@ export function DirectoryPicker({
                   disabled={data.offset === 0}
                   onClick={() => navigate(data.path, Math.max(0, data.offset - data.limit))}
                 >
-                  이전
+                  {t('이전')}
                 </button>
                 <button
                   type="button"
@@ -168,7 +171,7 @@ export function DirectoryPicker({
                   disabled={data.offset + data.limit >= data.total}
                   onClick={() => navigate(data.path, data.offset + data.limit)}
                 >
-                  다음
+                  {t('다음')}
                 </button>
               </div>
             )}
@@ -178,16 +181,16 @@ export function DirectoryPicker({
       <footer className="picker-footer">
         <p title={ready ? data?.path : undefined}>
           {ready && !canSelect
-            ? '변경한 경로는 이동 버튼이나 Enter로 확인해 주세요.'
+            ? t('변경한 경로는 이동 버튼이나 Enter로 확인해 주세요.')
             : ready
               ? data?.path
               : error
-                ? '경로를 확인하거나 다른 위치로 이동해 주세요.'
-                : '선택할 폴더를 확인하고 있어요.'}
+                ? t('경로를 확인하거나 다른 위치로 이동해 주세요.')
+                : t('선택할 폴더를 확인하고 있어요.')}
         </p>
         <div>
           <button type="button" className="secondary" onClick={onClose}>
-            취소
+            {t('취소')}
           </button>
           <button
             type="button"
@@ -197,7 +200,7 @@ export function DirectoryPicker({
               if (canSelect && data) onSelect(data.path);
             }}
           >
-            이 폴더 선택
+            {t('이 폴더 선택')}
           </button>
         </div>
       </footer>

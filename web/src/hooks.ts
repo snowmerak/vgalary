@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 
@@ -20,7 +21,7 @@ export function useResource<T>(path: string, interval = 0, refreshKey = '') {
         }
       } catch (cause) {
         if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : '데이터를 불러오지 못했습니다.');
+          setError(cause instanceof Error ? cause.message : t('데이터를 불러오지 못했습니다.'));
       } finally {
         running = false;
       }
@@ -45,7 +46,7 @@ export function useActions(notify: (message: string, error?: boolean) => void) {
     try {
       await action();
     } catch (cause) {
-      notify(cause instanceof Error ? cause.message : '요청을 처리하지 못했습니다.', true);
+      notify(cause instanceof Error ? cause.message : t('요청을 처리하지 못했습니다.'), true);
     } finally {
       active.current.delete(key);
       setPending(new Set(active.current));

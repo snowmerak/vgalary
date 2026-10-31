@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -22,8 +24,9 @@ type App struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wake     chan struct{}
-	running  map[string]context.CancelFunc
+	running  map[string]context.CancelCauseFunc
 	wg       sync.WaitGroup
+	logger   *slog.Logger
 }
 type cleanupTask struct {
 	ID         string   `json:"id"`
@@ -33,7 +36,7 @@ type cleanupTask struct {
 	Error      string   `json:"error,omitempty"`
 }
 
-func New(ctx context.Context, dir string) (*App, error) {
+func New(ctx context.Context, dir string, options ...Option) (*App, error) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -43,7 +46,11 @@ func New(ctx context.Context, dir string) (*App, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	a := &App{store: store, dir: dir, settings: DefaultSettings(), ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), running: map[string]context.CancelFunc{}}
+	a := &App{store: store, dir: dir, settings: DefaultSettings(), ctx: ctx, cancel: cancel, wake: make(chan struct{}, 1), running: map[string]context.CancelCauseFunc{}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for _, option := range options {
+		option(a)
+	}
+	a.ctx = observe(ctx, a.logger)
 	fail := func(err error) (*App, error) { cancel(); _ = store.db.Close(); return nil, err }
 	if err := store.get(ctx, "settings", "current", &a.settings); errors.Is(err, sql.ErrNoRows) {
 		a.settings = DefaultSettings()
@@ -76,7 +83,12 @@ func New(ctx context.Context, dir string) (*App, error) {
 	a.signal()
 	return a, nil
 }
-func (a *App) Close() error { a.cancel(); a.wg.Wait(); return a.store.db.Close() }
+func (a *App) Close() error {
+	a.cancel()
+	a.wg.Wait()
+	executionOf(a.ctx).observation.finish()
+	return a.store.db.Close()
+}
 func (a *App) signal() {
 	select {
 	case a.wake <- struct{}{}:
@@ -167,7 +179,8 @@ func (a *App) RemoveSource(ctx context.Context, id string) error {
 			continue
 		}
 		if cancel := a.running[job.ID]; cancel != nil {
-			cancel()
+			cancel(errSourceRemoved)
+			emit(a.logContext(ctx), slog.LevelInfo, "job.cancel_requested", slog.String("job_id", job.ID), slog.String("source_id", id), slog.String("reason", "source_removed"))
 		}
 		if job.Status == "queued" {
 			job.Status = "canceled"
@@ -176,6 +189,7 @@ func (a *App) RemoveSource(ctx context.Context, id string) error {
 			if err := a.store.put(ctx, "job", job.ID, job); err != nil {
 				return err
 			}
+			emit(a.logContext(ctx), slog.LevelInfo, "job.finished", slog.String("job_id", job.ID), slog.String("source_id", id), slog.String("result", "canceled"), slog.String("reason", "source_removed"))
 		}
 	}
 	assets, err := listRecords[Asset](ctx, a.store, "asset")
@@ -218,6 +232,7 @@ func (a *App) StartJob(ctx context.Context, sourceID string, force bool) (Job, e
 	if err := a.store.put(ctx, "job", job.ID, job); err != nil {
 		return Job{}, err
 	}
+	emit(a.logContext(ctx), slog.LevelInfo, "job.queued", slog.String("job_id", job.ID), slog.String("source_id", sourceID))
 	a.signal()
 	return job, nil
 }
@@ -229,14 +244,19 @@ func (a *App) CancelJob(ctx context.Context, id string) error {
 		return err
 	}
 	if cancel := a.running[id]; cancel != nil {
-		cancel()
+		cancel(errUserCanceled)
+		emit(a.logContext(ctx), slog.LevelInfo, "job.cancel_requested", slog.String("job_id", id), slog.String("source_id", job.SourceID), slog.String("reason", "user_canceled"))
 		return nil
 	}
 	if job.Status == "queued" {
 		job.Status = "canceled"
 		now := time.Now().UTC()
 		job.FinishedAt = &now
-		return a.store.put(ctx, "job", id, job)
+		if err := a.store.put(ctx, "job", id, job); err != nil {
+			return err
+		}
+		emit(a.logContext(ctx), slog.LevelInfo, "job.finished", slog.String("job_id", id), slog.String("source_id", job.SourceID), slog.String("result", "canceled"), slog.String("reason", "user_canceled"))
+		return nil
 	}
 	return nil
 }
@@ -253,6 +273,8 @@ func (a *App) worker() {
 		}
 		jobs, err := listRecords[Job](a.ctx, a.store, "job")
 		if err != nil {
+			emit(a.ctx, slog.LevelError, "worker.poll_failed", failureFields(err)...)
+			executionOf(a.ctx).observation.flush()
 			continue
 		}
 		sort.Slice(jobs, func(i, j int) bool { return jobs[i].CreatedAt.Before(jobs[j].CreatedAt) })
@@ -267,20 +289,26 @@ func (a *App) worker() {
 		cleanupCtx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 		a.cleanup(cleanupCtx)
 		cancel()
+		executionOf(a.ctx).observation.flush()
 	}
 }
 func (a *App) runJob(job Job) {
 	// A scan has no overall deadline; individual remote calls and media processes do.
-	ctx, cancel := context.WithCancel(a.ctx)
+	ctx, cancel := context.WithCancelCause(a.ctx)
+	defer cancel(nil)
+	ctx = observe(ctx, a.logger.With("job_id", job.ID, "source_id", job.SourceID, "run_id", uuid.NewString()))
 	a.mu.Lock()
 	// A queued job may have been canceled after the worker's initial snapshot.
 	var current Job
 	if err := a.store.get(ctx, "job", job.ID, &current); err != nil || current.Status != "queued" {
 		a.mu.Unlock()
-		cancel()
+		if err != nil {
+			emit(ctx, slog.LevelError, "job.persist_failed", append(failureFields(err), slog.String("stage", "start"))...)
+		}
 		return
 	}
 	job = current
+	resumed := job.Error == "resuming interrupted scan"
 	job.Status = "running"
 	job.Error = ""
 	now := time.Now().UTC()
@@ -295,18 +323,29 @@ func (a *App) runJob(job Job) {
 	a.running[job.ID] = cancel
 	startErr := a.store.put(ctx, "job", job.ID, job)
 	a.mu.Unlock()
-	var err error
 	if startErr != nil {
-		err = startErr
-	} else {
-		err = a.indexSource(ctx, &job)
+		emit(ctx, slog.LevelError, "job.persist_failed", append(failureFields(startErr), slog.String("stage", "start"))...)
+		a.mu.Lock()
+		delete(a.running, job.ID)
+		a.mu.Unlock()
+		return
 	}
+	if resumed {
+		emit(ctx, slog.LevelInfo, "job.resumed", slog.String("reason", "process_restart"))
+	}
+	emit(ctx, slog.LevelInfo, "job.started")
+	started := time.Now()
+	updateCounters(ctx, &job)
+	stopProgress := startProgress(ctx)
+	defer stopProgress()
+	err := a.indexSource(ctx, &job)
+	stopProgress()
 	a.mu.Lock()
 	delete(a.running, job.ID)
 	a.mu.Unlock()
 	// A shutdown leaves running jobs resumable; user cancellation is terminal.
 	if a.ctx.Err() != nil {
-		cancel()
+		emit(ctx, slog.LevelInfo, "job.interrupted", append(jobCounts(&job), slog.String("reason", "server_shutdown"), slog.Int64("duration_ms", time.Since(started).Milliseconds()))...)
 		return
 	}
 	if ctx.Err() != nil {
@@ -322,8 +361,23 @@ func (a *App) runJob(job Job) {
 	job.FinishedAt = &now
 	saveCtx, saveCancel := context.WithTimeout(a.ctx, 5*time.Second)
 	defer saveCancel()
-	_ = a.store.put(saveCtx, "job", job.ID, job)
-	cancel()
+	if saveErr := a.store.put(saveCtx, "job", job.ID, job); saveErr != nil {
+		emit(ctx, slog.LevelError, "job.persist_failed", append(failureFields(saveErr), slog.String("stage", "finish"), slog.String("result", job.Status))...)
+		return
+	}
+	attrs := append(jobCounts(&job), slog.String("result", job.Status), slog.Int64("duration_ms", time.Since(started).Milliseconds()))
+	if job.ProfileID != "" {
+		attrs = append(attrs, slog.String("profile_id", job.ProfileID))
+	}
+	level := slog.LevelInfo
+	if job.Status == "failed" {
+		level = slog.LevelError
+		attrs = append(attrs, failureFields(err)...)
+	}
+	if job.Status == "canceled" {
+		attrs = append(attrs, slog.String("reason", cancelReason(ctx)))
+	}
+	emit(ctx, level, "job.finished", attrs...)
 }
 func (a *App) dropAsset(ctx context.Context, asset Asset) error {
 	var profile Profile
@@ -343,8 +397,10 @@ func cleanupFor(asset Asset, s Settings) cleanupTask {
 func (a *App) cleanup(ctx context.Context) {
 	tasks, err := listRecords[cleanupTask](ctx, a.store, "cleanup")
 	if err != nil {
+		emit(ctx, slog.LevelWarn, "cleanup.failed", failureFields(err)...)
 		return
 	}
+	pending := len(tasks)
 	for _, task := range tasks {
 		cfg, err := resolve(task.Settings)
 		if err == nil {
@@ -352,13 +408,28 @@ func (a *App) cleanup(ctx context.Context) {
 		}
 		if err != nil {
 			task.Error = err.Error()
-			_ = a.store.put(ctx, "cleanup", task.ID, task)
+			emit(ctx, slog.LevelWarn, "cleanup.failed", append(failureFields(err), slog.String("cleanup_id", task.ID), slog.Int("pending_count", pending))...)
+			if saveErr := a.store.put(ctx, "cleanup", task.ID, task); saveErr != nil {
+				emit(ctx, slog.LevelWarn, "cleanup.failed", append(failureFields(saveErr), slog.String("cleanup_id", task.ID), slog.String("stage", "persist"))...)
+			}
 			continue
 		}
 		for _, id := range task.Points {
 			_ = os.Remove(filepath.Join(a.dir, "thumbnails", id+".jpg"))
 		}
-		_ = a.store.delete(ctx, "cleanup", task.ID)
+		if err := a.store.delete(ctx, "cleanup", task.ID); err != nil {
+			emit(ctx, slog.LevelWarn, "cleanup.failed", append(failureFields(err), slog.String("cleanup_id", task.ID), slog.String("stage", "persist"))...)
+			continue
+		}
+		if task.Error != "" {
+			pending--
+			emit(ctx, slog.LevelInfo, "cleanup.recovered", slog.String("cleanup_id", task.ID), slog.Int("pending_count", pending))
+			if o := executionOf(ctx).observation; o != nil {
+				o.finish()
+			}
+		} else {
+			pending--
+		}
 	}
 }
 func stableID(parts ...any) string {

@@ -1,3 +1,4 @@
+import { t, getLocale, number } from './i18n';
 import type { Asset, Result, Source } from './types';
 
 export function filename(asset: Asset): string {
@@ -6,7 +7,7 @@ export function filename(asset: Asset): string {
     (entries?.length ? entries[entries.length - 1].name : asset.location.relative_path)
       .replaceAll('\\', '/')
       .split('/')
-      .pop() || '미디어'
+      .pop() || t('미디어')
   );
 }
 export function displayPath(asset: Asset, sources: Source[]): string {
@@ -22,11 +23,11 @@ export function timestamp(milliseconds: number): string {
 export function bytes(value: number): string {
   if (!value) return '0 B';
   const i = Math.min(3, Math.floor(Math.log(value) / Math.log(1024)));
-  return `${(value / 1024 ** i).toLocaleString('ko-KR', { maximumFractionDigits: 1 })} ${['B', 'KB', 'MB', 'GB'][i]}`;
+  return `${number(value / 1024 ** i, { maximumFractionDigits: 1 })} ${['B', 'KB', 'MB', 'GB'][i]}`;
 }
 export function date(value?: string): string {
   return value
-    ? new Intl.DateTimeFormat('ko-KR', {
+    ? new Intl.DateTimeFormat(getLocale(), {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
@@ -49,6 +50,6 @@ export function sourceName(source?: Source): string {
     source?.root_path
       .replace(/[\\/]+$/, '')
       .split(/[\\/]/)
-      .pop() || '디렉토리'
+      .pop() || t('디렉토리')
   );
 }
