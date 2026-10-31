@@ -22,29 +22,29 @@
         사진과 영상, 중첩 ZIP·RAR 속까지 자연어로 찾아보세요. 앱과 미디어는 내
         컴퓨터에 두고 사용합니다.
       </p>
-      <a class="download" href="/install.mjs" download>설치 스크립트 받기 ↓</a>
+      <div class="download-group">
+        <a class="download" href="/install.ps1" download>PowerShell 설치기 ↓</a>
+        <a class="download" href="/install.sh" download>sh 설치기 ↓</a>
+      </div>
       <p class="hint">
         Windows · macOS · Linux / Git, Node.js 22.13+, npm, Go 1.27.3+ 필요
       </p>
       <section>
         <h2>1. 다운로드하고 설치하기</h2>
         <p>
-          다운로드한 <code>install.mjs</code>가 있는 디렉토리에서 실행하세요.
+          Windows에서는 PowerShell 설치기를, macOS·Linux에서는 sh 설치기를
+          실행하세요.
         </p>
-        <pre><code>node install.mjs</code></pre>
+        <h3>Windows PowerShell</h3>
+        <pre><code>Invoke-WebRequest https://vgalary.saturday.ne.kr/install.ps1 -OutFile install.ps1
+.\install.ps1</code></pre>
+        <h3>macOS · Linux</h3>
+        <pre><code>curl -fLo install.sh https://vgalary.saturday.ne.kr/install.sh
+sh install.sh</code></pre>
         <p>
           설치기는 GitHub의 소스를 받아 웹 UI와 Go 서버를 빌드합니다. 설치가
           끝나면 실행 파일의 위치와 시작 명령을 안내합니다.
         </p>
-        <details>
-          <summary>터미널에서 바로 다운로드하기</summary>
-          <h3>Windows PowerShell</h3>
-          <pre><code>Invoke-WebRequest https://vgalary.saturday.ne.kr/install.mjs -OutFile install.mjs
-node install.mjs</code></pre>
-          <h3>macOS · Linux</h3>
-          <pre><code>curl -fLo install.mjs https://vgalary.saturday.ne.kr/install.mjs
-node install.mjs</code></pre>
-        </details>
       </section>
       <section>
         <h2>2. 로컬 서버 시작하기</h2>
@@ -57,12 +57,15 @@ node install.mjs</code></pre>
       </section>
       <section>
         <h2>업데이트와 설치 위치</h2>
-        <pre><code>node install.mjs --update
-node install.mjs --directory "원하는 설치 경로"</code></pre>
+        <h3>Windows PowerShell</h3>
+        <pre><code>.\install.ps1 -Update
+.\install.ps1 -Directory "원하는 설치 경로"</code></pre>
+        <h3>macOS · Linux</h3>
+        <pre><code>sh install.sh --update
+sh install.sh --directory "원하는 설치 경로"</code></pre>
         <p>
-          실행 중인 앱은 먼저 종료해 주세요. <code>--update</code>는 기본 설치
-          위치를 갱신합니다. 별도 위치를 사용했다면 같은
-          <code>--directory</code>를 함께 지정하세요. 앱 데이터는 사용자 설정
+          실행 중인 앱은 먼저 종료해 주세요. 업데이트할 때는 처음 설치한 것과
+          같은 스크립트와 설치 경로를 사용하세요. 앱 데이터는 사용자 설정
           디렉토리에 유지됩니다.
         </p>
       </section>

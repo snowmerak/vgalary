@@ -23,52 +23,50 @@ Pages의 Git 연동 프로젝트에서 아래 값을 사용한다.
 node scripts/build-distribution.mjs
 ```
 
-출력에는 `index.html`, `styles.css`, `404.html`, `_headers`, `robots.txt`, `install.mjs`만 포함한다. Go 실행 파일, DB, 사용자 미디어와 비밀 환경 변수는 포함하지 않는다. `install.mjs`의 원본은 `scripts/install.mjs` 하나이며 게시용 사본은 빌드 때 생성한다. Pages 사이트는 앱의 `/api` 요청을 중계하거나 로컬 미디어를 받지 않는다.
+출력에는 `index.html`, `styles.css`, `404.html`, `_headers`, `robots.txt`, `install.ps1`, `install.sh`만 포함한다. Go 실행 파일, DB, 사용자 미디어와 비밀 환경 변수는 포함하지 않는다. 설치기 원본은 `scripts/install.ps1`, `scripts/install.sh`이며 게시용 사본은 빌드 때 생성한다. Pages 사이트는 앱의 `/api` 요청을 중계하거나 로컬 미디어를 받지 않는다.
 
 Pages의 [빌드 명령·출력 디렉토리](https://developers.cloudflare.com/pages/configuration/build-configuration/), [정적 응답 헤더](https://developers.cloudflare.com/pages/configuration/headers/), [커스텀 도메인](https://developers.cloudflare.com/pages/configuration/custom-domains/)은 Cloudflare 공식 문서를 따른다.
 
 ## 이용자 설치
 
-Git, Node.js 22.13 이상, npm, Go 1.27.3 이상이 설치되어 있어야 한다. 사이트에서 `install.mjs`를 다운로드해 해당 파일이 있는 디렉토리에서 실행한다.
-
-```text
-node install.mjs
-```
-
-사이트 게시 후 터미널에서 다운로드할 수도 있다.
+Git, Node.js 22.13 이상, npm, Go 1.27.3 이상이 설치되어 있어야 한다. Windows는 PowerShell 설치기를, macOS·Linux는 POSIX `sh` 설치기를 사용한다. OS·아키텍처를 감지하거나 분기하지 않으며 각 스크립트가 직접 Git 복제·설치·업데이트를 수행한다. 웹·Go 빌드는 공통 `scripts/deploy.mjs --build-only`를 호출한다. 사이트에서 파일을 받거나 아래 명령으로 다운로드한다.
 
 Windows PowerShell:
 
 ```powershell
-Invoke-WebRequest https://vgalary.saturday.ne.kr/install.mjs -OutFile install.mjs
-node install.mjs
+Invoke-WebRequest https://vgalary.saturday.ne.kr/install.ps1 -OutFile install.ps1
+.\install.ps1
 ```
 
 macOS·Linux:
 
 ```sh
-curl -fLo install.mjs https://vgalary.saturday.ne.kr/install.mjs
-node install.mjs
+curl -fLo install.sh https://vgalary.saturday.ne.kr/install.sh
+sh install.sh
 ```
 
 설치기는 `https://github.com/snowmerak/vgalary.git`을 `<설치 위치>/source`로 복제하고 `npm ci` → 웹 lint·테스트·타입 검사·빌드 → Go 빌드를 실행한다. 실행 파일은 `<설치 위치>/bin/vgalary`(Windows에서는 `vgalary.exe`)에 둔다. 웹 UI를 실행 파일에 포함하므로 앱 실행 시 별도의 Node 서버가 필요하지 않다.
 
 | OS | 기본 설치 위치 |
 | --- | --- |
-| Windows | `%LOCALAPPDATA%/vgalary` |
-| macOS | `~/Library/Application Support/vgalary/install` |
-| Linux | `$XDG_DATA_HOME/vgalary`, 미설정 시 `~/.local/share/vgalary` |
+| PowerShell 설치기 | `%LOCALAPPDATA%/vgalary`, 미설정 시 `~/.local/share/vgalary` |
+| sh 설치기 (macOS·Linux) | `$XDG_DATA_HOME/vgalary`, 미설정 시 `~/.local/share/vgalary` |
 
 설치기는 관리자 권한, PATH 변경, 서비스 등록을 요구하지 않는다. 서버를 자동 시작하거나 외부에 공개하지 않으며 설치 후 시작 명령을 출력한다. 출력한 명령으로 실행 파일을 시작하고 `http://127.0.0.1:8181`을 연다. 같은 앱 데이터 디렉토리는 한 프로세스에서만 사용한다.
 
 설치 위치 지정과 업데이트:
 
-```text
-node install.mjs --directory "원하는 설치 경로"
-node install.mjs --directory "원하는 설치 경로" --update
+```powershell
+.\install.ps1 -Directory "원하는 설치 경로"
+.\install.ps1 -Directory "원하는 설치 경로" -Update
 ```
 
-업데이트 전에 실행 중인 앱을 종료한다. `--update`는 기존 설치의 깨끗한 Git 체크아웃을 `git pull --ff-only`로 갱신한다. 같은 설치기를 다시 실행하면 기본적으로 현재 체크아웃을 재빌드하며 소스를 자동 갱신하지 않는다. 로컬 수정이나 다른 저장소의 체크아웃을 발견하면 덮어쓰지 않고 중단한다. 실행 파일은 빌드 성공 후 교체한다. 사용자 미디어·SQLite는 설치·업데이트 과정에서 변경하지 않는다.
+```sh
+sh install.sh --directory "원하는 설치 경로"
+sh install.sh --directory "원하는 설치 경로" --update
+```
+
+업데이트 전에 실행 중인 앱을 종료하고 처음과 같은 스크립트·설치 경로를 사용한다. `-Update` 또는 `--update`는 기존 설치의 깨끗한 Git 체크아웃을 `git pull --ff-only`로 갱신한다. 같은 설치기를 다시 실행하면 기본적으로 현재 체크아웃을 재빌드하며 소스를 자동 갱신하지 않는다. 로컬 수정이나 다른 저장소의 체크아웃을 발견하면 덮어쓰지 않고 중단한다. 실행 파일은 빌드 성공 후 교체한다. 사용자 미디어·SQLite는 설치·업데이트 과정에서 변경하지 않는다. 기존 Node 설치기로 별도 경로에 설치했다면 그 경로를 명시해 이어서 사용한다.
 
 ## 소스 체크아웃에서 실행
 

@@ -24,7 +24,7 @@ go run ./cmd/vgalary -data-dir .local/app
 node scripts/deploy.mjs
 ```
 
-`vgalary.saturday.ne.kr`은 Cloudflare Pages에서 **설치 안내와 설치 스크립트만** 배포하는 사이트입니다. 해당 사이트를 게시한 뒤 `install.mjs`를 받아 `node install.mjs`로 사용자 디렉토리에 설치할 수 있습니다. 앱은 각 이용자의 컴퓨터에서 실행하며, 외부 공개 여부와 접속 방식은 이용자가 선택합니다. Pages 빌드 설정, 설치 위치와 선택적 도메인 모드는 [설치·배포 문서](docs/deployment.md)를 참고하세요.
+`vgalary.saturday.ne.kr`은 Cloudflare Pages에서 **설치 안내와 설치 스크립트만** 배포하는 사이트입니다. Windows에서는 `install.ps1`, macOS·Linux에서는 `install.sh`를 받아 사용자 디렉토리에 설치합니다. 두 설치기는 OS 판별 없이 Git 복제·빌드·설치·업데이트를 처리합니다. 앱은 각 이용자의 컴퓨터에서 실행하며, 외부 공개 여부와 접속 방식은 이용자가 선택합니다. Pages 빌드 설정, 설치 위치와 선택적 도메인 모드는 [설치·배포 문서](docs/deployment.md)를 참고하세요.
 
 ```powershell
 $base = 'http://127.0.0.1:8181'

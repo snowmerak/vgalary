@@ -3,7 +3,12 @@
   Referrer-Policy: no-referrer
   Content-Security-Policy: default-src 'none'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'
 
-/install.mjs
+/install.sh
   Content-Type: application/octet-stream
-  Content-Disposition: attachment; filename="install.mjs"
+  Content-Disposition: attachment; filename="install.sh"
+  Cache-Control: no-cache
+
+/install.ps1
+  Content-Type: application/octet-stream
+  Content-Disposition: attachment; filename="install.ps1"
   Cache-Control: no-cache

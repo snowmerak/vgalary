@@ -61,6 +61,11 @@ h1 {
   text-decoration: none;
   font-weight: 600;
 }
+.download-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .hint {
   font-size: 13px;
   color: #65736a;
