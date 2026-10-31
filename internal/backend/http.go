@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/snowmerak/vgalary/internal/webui"
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -48,9 +49,22 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
-// Handler exposes a loopback-only, single-user API with browser cross-origin protection.
+// Handler exposes the default loopback UI/API used by local installations.
 func (a *App) Handler() http.Handler {
+	handler, _ := a.HandlerWithOptions(HTTPOptions{})
+	return handler
+}
+
+// HandlerWithOptions enables an explicit HTTPS origin and password-backed sessions.
+func (a *App) HandlerWithOptions(options HTTPOptions) (http.Handler, error) {
+	access, err := newWebAccess(options)
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/session", access.session)
+	mux.HandleFunc("POST /api/login", access.login)
+	mux.HandleFunc("POST /api/logout", access.logout)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /api/settings", a.getSettings)
 	mux.HandleFunc("PUT /api/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -196,24 +210,33 @@ func (a *App) Handler() http.Handler {
 		}
 		writeJSON(w, 200, tasks)
 	})
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]string{"name": "vgalary", "status": "backend ready", "settings": "/api/settings", "documentation": "docs/api.md"})
-	})
-	protected := http.NewCrossOriginProtection().Handler(mux)
+	mux.Handle("GET /", webui.Handler())
+	originProtection := http.NewCrossOriginProtection()
+	if access.origin != "" {
+		if err := originProtection.AddTrustedOrigin(access.origin); err != nil {
+			return nil, err
+		}
+	}
+	originProtection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		apiError(w, 403, errors.New("cross-origin request rejected"))
+	}))
+	protected := originProtection.Handler(access.protect(mux))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
 		host := r.Host
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
 		ip := net.ParseIP(host)
-		if !strings.EqualFold(host, "localhost") && (ip == nil || !ip.IsLoopback()) {
-			apiError(w, 403, errors.New("loopback Host required"))
+		publicMatch := access.host != "" && strings.EqualFold(r.Host, access.host)
+		if !publicMatch && !strings.EqualFold(host, "localhost") && (ip == nil || !ip.IsLoopback()) {
+			apiError(w, 403, errors.New("host not allowed"))
 			return
 		}
 		protected.ServeHTTP(w, r)
-	})
+	}), nil
 }
 func (a *App) getSettings(w http.ResponseWriter, r *http.Request) {
 	s := a.Settings()

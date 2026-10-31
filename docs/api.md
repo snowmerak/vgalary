@@ -2,11 +2,16 @@
 
 상태: 현재 구현된 HTTP API. 기준은 `internal/backend/http.go`와 설정 타입 `internal/backend/config.go`다. 갱신일: 2026-10-31.
 
-기본 주소는 `http://127.0.0.1:8181`이다. JSON 요청에는 `Content-Type: application/json; charset=utf-8`을 사용한다. 로컬 단일 사용자 API이며 loopback Host만 허용하고 브라우저의 다른 Origin에서 보내는 변경 요청은 거절한다. 공개 서비스 인증은 제공하지 않는다.
+기본 주소는 `http://127.0.0.1:8181`이다. JSON 요청에는 `Content-Type: application/json; charset=utf-8`을 사용한다. 로컬 기본 모드는 loopback Host만 허용하고 다른 Origin의 변경 요청을 거절한다. 웹 UI도 같은 서버에서 제공한다.
+
+선택적 `-public-origin https://gallery.example.com` 모드는 이용자의 HTTPS 프록시 뒤에서 단일 사용자 비밀번호 인증을 적용한다. 비밀번호는 `-web-password-env`가 지정한 환경 변수(기본 `VGALARY_WEB_PASSWORD`, 최소 16바이트)에서 읽으며 API에 값을 반환하지 않는다. 로그인·세션 조회·health를 제외한 API는 인증 쿠키가 없으면 `401`을 반환한다. 배포 구성은 [배포 문서](deployment.md)를 따른다. `vgalary.saturday.ne.kr`은 앱 주소가 아닌 설치 파일 배포 사이트다.
 
 | 메서드 | 경로 | 동작 |
 | --- | --- | --- |
 | GET | `/api/health` | 프로세스 상태. 외부 서비스 준비 여부와 별개 |
+| GET | `/api/session` | `authenticated`, `auth_required` 확인 |
+| POST | `/api/login` | `{"password":"..."}`로 로그인. HttpOnly·SameSite=Strict 세션 쿠키, 공개 모드는 Secure |
+| POST | `/api/logout` | 현재 브라우저의 세션 쿠키 제거 |
 | GET / PUT | `/api/settings` | 설정 조회 / 전체 설정 교체 |
 | GET | `/api/models` | 모델 ID 목록. 서버 프리셋·명령줄은 반환하지 않음 |
 | POST | `/api/connections/test` | 모델 목록, 텍스트·테스트 이미지 두 장, Qdrant 연결 확인 |

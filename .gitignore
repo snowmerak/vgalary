@@ -1,6 +1,10 @@
 /.local/
 /bin/
 /testdata/local/
+/web/node_modules/
+/.deploy/
+/internal/webui/assets/*
+!/internal/webui/assets/.gitkeep
 *.exe
 *.db
 *.db-shm

@@ -1,8 +1,8 @@
 # vgalary
 
-Go로 만든 로컬 이미지·영상 검색 백엔드입니다. 폴더와 중첩 ZIP·RAR를 탐색해 llama.cpp의 EmbeddingGemma 2로 임베딩하고, Qdrant에서 자연어로 검색합니다. 현재 HTTP API를 구현했으며 웹 UI는 후속 작업입니다.
+Go로 만든 이미지·영상 검색 앱입니다. 폴더와 중첩 ZIP·RAR를 탐색해 llama.cpp의 EmbeddingGemma 2로 임베딩하고, Qdrant에서 자연어로 검색합니다. 웹 UI에서 검색, 영상 시점 이동, 원본 다운로드·내보내기, 디렉토리·작업·연결 설정을 관리합니다.
 
-Go 1.27.3 이상, `ffmpeg`·`ffprobe`, 멀티모달 임베딩이 켜진 llama.cpp 서버, Qdrant가 필요합니다. Windows ARM64와 FFmpeg 9.0.2에서 검증했습니다.
+빌드에는 Git, Node.js 22.13 이상, npm, Go 1.27.3 이상이 필요합니다. 색인에는 `ffmpeg`·`ffprobe`, 멀티모달 임베딩이 켜진 llama.cpp 서버, Qdrant를 사용합니다. Windows ARM64와 FFmpeg 9.0.2에서 검증했습니다.
 
 ```powershell
 # Qdrant: Docker를 사용하는 경우
@@ -11,10 +11,20 @@ docker compose up -d
 # Docker를 사용할 수 없으면 위 명령 대신 WSLC 사용
 wslc run --detach --name vgalary-qdrant --publish 127.0.0.1:6333:6333 --volume vgalary-qdrant-data:/qdrant/storage qdrant/qdrant:v1.20.0
 
+npm ci --prefix web
+npm run build --prefix web
 go run ./cmd/vgalary -data-dir .local/app
 ```
 
-기본 API 주소는 `http://127.0.0.1:8181`입니다. 임베딩 서버는 `http://127.0.0.1:18182/v1`, Model은 `embed`, Qdrant는 `http://127.0.0.1:6333`을 기본으로 사용합니다. 연결 설정과 인덱싱 디렉토리는 SQLite에 저장하고 API로 변경합니다. `-data-dir`를 생략하면 OS 사용자 설정 디렉토리 아래 `vgalary`를 사용합니다. 같은 데이터 디렉토리는 한 앱 프로세스에서 사용하세요.
+기본 웹 UI·API 주소는 `http://127.0.0.1:8181`입니다. 임베딩 서버는 `http://127.0.0.1:18182/v1`, Model은 `embed`, Qdrant는 `http://127.0.0.1:6333`을 기본으로 사용합니다. 연결 설정과 인덱싱 디렉토리는 SQLite에 저장하고 웹 UI나 API로 변경합니다. `-data-dir`를 생략하면 OS 사용자 설정 디렉토리 아래 `vgalary`를 사용합니다. 같은 데이터 디렉토리는 한 앱 프로세스에서 사용하세요.
+
+소스에서 한 번에 빌드하고 로컬 서버를 시작하려면 다음 스크립트를 사용합니다. 웹 빌드 결과를 Go 실행 파일에 포함합니다.
+
+```powershell
+node scripts/deploy.mjs
+```
+
+`vgalary.saturday.ne.kr`은 Cloudflare Pages에서 **설치 안내와 설치 스크립트만** 배포하는 사이트입니다. 해당 사이트를 게시한 뒤 `install.mjs`를 받아 `node install.mjs`로 사용자 디렉토리에 설치할 수 있습니다. 앱은 각 이용자의 컴퓨터에서 실행하며, 외부 공개 여부와 접속 방식은 이용자가 선택합니다. Pages 빌드 설정, 설치 위치와 선택적 도메인 모드는 [설치·배포 문서](docs/deployment.md)를 참고하세요.
 
 ```powershell
 $base = 'http://127.0.0.1:8181'
@@ -49,6 +59,10 @@ Invoke-RestMethod "$base/api/sources/$($source.id)" -Method Delete
 
 ```powershell
 go mod tidy
+node --test scripts/install.test.mjs
+npm run lint --prefix web
+npm test --prefix web
+npm run build --prefix web
 go build ./...
 go vet ./...
 go test ./...
@@ -68,4 +82,4 @@ go test ./internal/backend -run '^TestLiveBackend$' -v -count=1 -timeout 25m
 
 지원 이미지 후보는 JPEG·PNG·GIF·WebP이며 GIF는 첫 프레임을 사용합니다. 영상 후보는 MP4·MKV·WebM·MOV·AVI·M4V·TS이고 실제 디코딩은 설치한 FFmpeg에 따릅니다. 압축 내부 링크의 가상 경로 해석, 암호화·분할 압축, OCR·음성 검색, 원본 영상의 재생 호환성을 위한 변환은 아직 제공하지 않습니다. 전체 캐시의 자동 용량 관리와 비정상 종료로 남은 임시 파일 정리는 후속 작업입니다.
 
-[API와 설정](docs/api.md) · [구현·검증 기록](docs/backend-verification.md) · [프로젝트 blueprint](docs/blueprint.md)
+[API와 설정](docs/api.md) · [배포와 웹 개발](docs/deployment.md) · [백엔드 검증 기록](docs/backend-verification.md) · [프로젝트 blueprint](docs/blueprint.md)
