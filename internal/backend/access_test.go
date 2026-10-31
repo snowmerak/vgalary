@@ -45,7 +45,7 @@ func TestDomainSessionProtectsAllMediaAndSettings(t *testing.T) {
 		handler.ServeHTTP(response, req)
 		return response
 	}
-	for _, path := range []string{"/api/settings", "/api/assets", "/api/assets/any/download", "/api/jobs", "/api/sources", "/api/directories"} {
+	for _, path := range []string{"/api/settings", "/api/assets", "/api/assets/counts", "/api/assets/any/download", "/api/jobs", "/api/sources", "/api/directories"} {
 		if got := request("GET", path, "", nil, "").Code; got != 401 {
 			t.Fatalf("unprotected %s: %d", path, got)
 		}

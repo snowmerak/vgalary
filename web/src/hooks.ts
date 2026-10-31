@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 
-export function useResource<T>(path: string, interval = 0) {
+export function useResource<T>(path: string, interval = 0, refreshKey = '') {
   const [data, setData] = useState<T>();
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -31,7 +31,7 @@ export function useResource<T>(path: string, interval = 0) {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [path, interval, revision]);
+  }, [path, interval, revision, refreshKey]);
   return { data, error, refresh };
 }
 

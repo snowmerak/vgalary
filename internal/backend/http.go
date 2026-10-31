@@ -191,6 +191,7 @@ func (a *App) HandlerWithOptions(options HTTPOptions) (http.Handler, error) {
 		writeJSON(w, 200, map[string]any{"results": results})
 	})
 	mux.HandleFunc("GET /api/assets", a.listAssets)
+	mux.HandleFunc("GET /api/assets/counts", a.assetCounts)
 	mux.HandleFunc("GET /api/assets/{id}", func(w http.ResponseWriter, r *http.Request) {
 		asset, _, err := a.asset(r.Context(), r.PathValue("id"))
 		if err != nil {
@@ -318,36 +319,6 @@ func cosine(a, b []float32) float64 {
 		nb += float64(b[i]) * float64(b[i])
 	}
 	return dot / math.Sqrt(na*nb)
-}
-func (a *App) listAssets(w http.ResponseWriter, r *http.Request) {
-	profileID := r.URL.Query().Get("profile_id")
-	if profileID == "" {
-		if err := a.store.get(r.Context(), "meta", "active_profile", &profileID); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			apiError(w, 500, err)
-			return
-		}
-	}
-	assets, err := listRecords[Asset](r.Context(), a.store, "asset")
-	if err != nil {
-		apiError(w, 500, err)
-		return
-	}
-	sources, err := a.Sources(r.Context())
-	if err != nil {
-		apiError(w, 500, err)
-		return
-	}
-	active := map[string]bool{}
-	for _, s := range sources {
-		active[s.ID] = true
-	}
-	result := []Asset{}
-	for _, asset := range assets {
-		if active[asset.SourceID] && (profileID == "" || asset.ProfileID == profileID) && (r.URL.Query().Get("source_id") == "" || r.URL.Query().Get("source_id") == asset.SourceID) {
-			result = append(result, asset)
-		}
-	}
-	writeJSON(w, 200, result)
 }
 func (a *App) thumbnail(w http.ResponseWriter, r *http.Request) {
 	asset, source, err := a.asset(r.Context(), r.PathValue("id"))

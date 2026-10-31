@@ -1,22 +1,24 @@
 import { useState, type FormEvent } from 'react';
 import { Folder, FolderPlus, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { api, post } from './api';
-import { Empty, Modal, Spinner } from './components';
+import { Empty, ErrorBanner, Modal, Spinner } from './components';
 import { DirectoryPicker } from './DirectoryPicker';
-import { useActions } from './hooks';
+import { useActions, useResource } from './hooks';
 import { date, sourceName } from './utils';
-import type { Asset, Job, Source } from './types';
+import type { Job, Source } from './types';
 
 export function SourcesPage({
   sources,
-  assets,
+  refreshKey,
+  profileID,
   jobs,
   refresh,
   onScan,
   notify,
 }: {
   sources: Source[];
-  assets: Asset[];
+  refreshKey: string;
+  profileID: string;
   jobs: Job[];
   refresh: () => void;
   onScan: () => void;
@@ -26,12 +28,18 @@ export function SourcesPage({
   const [browsing, setBrowsing] = useState(false);
   const [remove, setRemove] = useState<Source | null>(null);
   const { run, pending } = useActions(notify);
+  const counts = useResource<Record<string, number>>(
+    `/assets/counts?${new URLSearchParams({ profile_id: profileID })}`,
+    0,
+    refreshKey,
+  );
   const add = (event: FormEvent) => {
     event.preventDefault();
     void run('add', async () => {
       await post('/sources', { root_path: path.trim() });
       setPath('');
       refresh();
+      counts.refresh();
       notify('디렉토리를 추가했습니다. 색인을 시작해 주세요.');
     });
   };
@@ -75,10 +83,11 @@ export function SourcesPage({
           등록된 디렉토리 <span>{sources.length}</span>
         </h2>
       </div>
+      {counts.error && <ErrorBanner message={counts.error} retry={counts.refresh} />}
       {sources.length ? (
         <div className="source-list">
           {sources.map((source) => {
-            const count = assets.filter((asset) => asset.source_id === source.id).length;
+            const count = counts.data?.[source.id];
             const active = jobs.some(
               (job) => job.source_id === source.id && ['queued', 'running'].includes(job.status),
             );
@@ -94,7 +103,12 @@ export function SourcesPage({
                   </h3>
                   <p title={source.root_path}>{source.root_path}</p>
                   <span>
-                    미디어 {count.toLocaleString()}개 · {date(source.created_at)} 등록
+                    {counts.data
+                      ? `미디어 ${(count ?? 0).toLocaleString()}개`
+                      : counts.error
+                        ? '미디어 개수 확인 실패'
+                        : '미디어 집계 중'}{' '}
+                    · {date(source.created_at)} 등록
                   </span>
                 </div>
                 <div className="source-actions">
@@ -161,6 +175,7 @@ export function SourcesPage({
                   await api(`/sources/${remove.id}`, { method: 'DELETE' });
                   setRemove(null);
                   refresh();
+                  counts.refresh();
                   notify('디렉토리 등록을 제거했습니다.');
                 })
               }

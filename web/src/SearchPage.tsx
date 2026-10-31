@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api } from './api';
+import { catalogPage, catalogPageSize } from './catalog';
 import { Empty, ErrorBanner, Spinner } from './components';
 import { filename, libraryResult, sourceName, timestamp } from './utils';
 import type { Asset, MediaType, Result, Source } from './types';
@@ -69,32 +70,47 @@ function MediaCard({ result, onSelect }: { result: Result; onSelect: (result: Re
 }
 
 export function SearchPage({
-  assets,
   sources,
-  error,
-  refresh,
+  refreshKey,
+  profileID,
   onSelect,
   goSources,
 }: {
-  assets?: Asset[];
   sources: Source[];
-  error: string;
-  refresh: () => void;
+  refreshKey: string;
+  profileID: string;
   onSelect: (result: Result) => void;
   goSources: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const [submitted, setSubmitted] = useState('');
-  const [kind, setKind] = useState<MediaType>('');
-  const [source, setSource] = useState('');
-  const [results, setResults] = useState<Result[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [searchError, setSearchError] = useState('');
-  const [visible, setVisible] = useState(24);
-  const [hasMore, setHasMore] = useState(false);
+  const [request, setRequest] = useState({
+    query: '',
+    kind: '' as MediaType,
+    source: '',
+    offset: 0,
+    revision: 0,
+    refreshKey,
+  });
+  // A catalog revision always restarts at the first page, keeping the user's query and filters.
+  const currentRequest = request.refreshKey === refreshKey ? request : { ...request, offset: 0, refreshKey };
+  const { query: submitted, kind, source, offset } = currentRequest;
+  const baseKey = JSON.stringify([submitted, kind, source, refreshKey, profileID]);
+  const key = JSON.stringify([baseKey, offset, request.revision]);
+  const [response, setResponse] = useState<{
+    baseKey: string;
+    key: string;
+    items: Result[];
+    hasMore: boolean;
+    error: string;
+  }>();
+  const current = response?.baseKey === baseKey ? response : undefined;
+  const busy = current?.key !== key;
+  const error = busy ? '' : current?.error || '';
+  const hasMore = current?.hasMore || false;
+  const shown = (current?.items || []).map((result) =>
+    submitted ? result : libraryResult(result.asset, sources),
+  );
   const input = useRef<HTMLInputElement>(null);
-  const request = useRef<AbortController | null>(null);
-  const intent = useRef('');
   useEffect(() => {
     const focus = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -103,68 +119,78 @@ export function SearchPage({
       }
     };
     window.addEventListener('keydown', focus);
-    return () => {
-      window.removeEventListener('keydown', focus);
-      request.current?.abort();
-    };
+    return () => window.removeEventListener('keydown', focus);
   }, []);
-  const search = async (text: string, nextKind = kind, nextSource = source, append = false) => {
-    intent.current = text.trim();
-    if (!text.trim()) {
-      request.current?.abort();
-      setBusy(false);
-      setResults(null);
-      setSubmitted('');
-      setSearchError('');
-      return;
-    }
-    request.current?.abort();
+  useEffect(() => {
     const controller = new AbortController();
-    request.current = controller;
-    setBusy(true);
-    setSearchError('');
-    try {
-      const response = await api<{ results: Result[] }>('/search', {
-        method: 'POST',
-        body: JSON.stringify({
-          query: text.trim(),
-          media_type: nextKind,
-          source_id: nextSource,
-          limit: 24,
-          offset: append ? results?.length || 0 : 0,
-        }),
-        signal: controller.signal,
-      });
-      if (!controller.signal.aborted) {
-        setResults((previous) => (append ? [...(previous || []), ...response.results] : response.results));
-        setHasMore(response.results.length === 24);
-        setSubmitted(text.trim());
+    const load = async () => {
+      try {
+        let items: Result[];
+        if (submitted) {
+          const result = await api<{ results: Result[] }>('/search', {
+            method: 'POST',
+            body: JSON.stringify({
+              query: submitted,
+              media_type: kind,
+              source_id: source,
+              limit: catalogPageSize + 1,
+              offset,
+            }),
+            signal: controller.signal,
+          });
+          items = result.results;
+        } else {
+          const params = new URLSearchParams({
+            limit: String(catalogPageSize + 1),
+            offset: String(offset),
+            media_type: kind,
+            source_id: source,
+            profile_id: profileID,
+          });
+          const assets = await api<Asset[]>(`/assets?${params}`, { signal: controller.signal });
+          items = assets.map((asset) => libraryResult(asset, []));
+        }
+        if (!controller.signal.aborted) {
+          const page = catalogPage(items);
+          setResponse((previous) => ({
+            baseKey,
+            key,
+            error: '',
+            hasMore: page.hasMore,
+            items:
+              offset > 0 && previous?.baseKey === baseKey ? [...previous.items, ...page.items] : page.items,
+          }));
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted)
+          setResponse((previous) => ({
+            baseKey,
+            key,
+            items: previous?.baseKey === baseKey ? previous.items : [],
+            hasMore: previous?.baseKey === baseKey ? previous.hasMore : false,
+            error: cause instanceof Error ? cause.message : '미디어를 불러오지 못했습니다.',
+          }));
       }
-    } catch (cause) {
-      if (!controller.signal.aborted)
-        setSearchError(cause instanceof Error ? cause.message : '검색하지 못했습니다.');
-    } finally {
-      if (!controller.signal.aborted) setBusy(false);
-    }
-  };
+    };
+    void load();
+    return () => controller.abort();
+  }, [baseKey, key, submitted, kind, source, offset, profileID]);
+  const reset = (changes: Partial<Pick<typeof request, 'query' | 'kind' | 'source'>>) =>
+    setRequest((previous) => ({
+      ...previous,
+      ...changes,
+      offset: 0,
+      refreshKey,
+      revision: previous.revision + 1,
+    }));
+  const retry = () =>
+    setRequest((previous) => ({ ...previous, refreshKey, offset, revision: previous.revision + 1 }));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void search(query);
+    reset({ query: query.trim() });
   };
-  const filtered = (assets || [])
-    .filter((asset) => (!kind || asset.media_type === kind) && (!source || asset.source_id === source))
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  const shown = results ?? filtered.slice(0, visible).map((asset) => libraryResult(asset, sources));
-  const changeKind = (value: MediaType) => {
-    setKind(value);
-    setVisible(24);
-    if (intent.current) void search(intent.current, value, source);
-  };
-  const changeSource = (value: string) => {
-    setSource(value);
-    setVisible(24);
-    if (intent.current) void search(intent.current, kind, value);
-  };
+  const changeKind = (value: MediaType) => reset({ kind: value });
+  const changeSource = (value: string) => reset({ source: value });
   return (
     <section className="search-page">
       <div className="page-intro">
@@ -220,8 +246,7 @@ export function SearchPage({
           <ChevronDown size={16} />
         </div>
       </div>
-      {error && <ErrorBanner message={error} retry={refresh} />}
-      {searchError && <ErrorBanner message={searchError} retry={() => void search(query)} />}
+      {error && <ErrorBanner message={error} retry={retry} />}
       <div className="results-heading">
         <h2>
           {submitted ? '검색 결과' : '라이브러리'}
@@ -232,10 +257,10 @@ export function SearchPage({
           <ChevronDown size={14} />
         </span>
       </div>
-      {assets === undefined && !results && !error ? (
+      {busy && shown.length === 0 ? (
         <div className="loading">
           <Spinner />
-          라이브러리를 불러오고 있어요.
+          {submitted ? '검색하고 있어요.' : '라이브러리를 불러오고 있어요.'}
         </div>
       ) : shown.length > 0 ? (
         <>
@@ -244,13 +269,18 @@ export function SearchPage({
               <MediaCard key={`${result.asset.id}:${result.point_id}`} result={result} onSelect={onSelect} />
             ))}
           </div>
-          {((results && hasMore) || (!results && filtered.length > visible)) && (
+          {hasMore && (
             <div className="load-more">
               <button
                 className="secondary"
                 disabled={busy}
                 onClick={() =>
-                  results ? void search(submitted, kind, source, true) : setVisible((value) => value + 24)
+                  setRequest((previous) => ({
+                    ...previous,
+                    refreshKey,
+                    offset: shown.length,
+                    revision: previous.revision + 1,
+                  }))
                 }
               >
                 {busy ? <Spinner /> : '더 보기'}
@@ -258,12 +288,16 @@ export function SearchPage({
             </div>
           )}
         </>
-      ) : (
+      ) : error ? null : (
         <Empty
           icon={submitted ? <Search size={30} /> : <Sparkles size={30} />}
-          title={submitted ? '일치하는 미디어가 없어요.' : '나만의 라이브러리를 연결해 보세요.'}
+          title={
+            submitted || kind || source ? '일치하는 미디어가 없어요.' : '나만의 라이브러리를 연결해 보세요.'
+          }
           action={
-            !submitted && (
+            !submitted &&
+            !kind &&
+            !source && (
               <button className="primary" onClick={goSources}>
                 디렉토리 추가
                 <ArrowUpRight size={16} />
@@ -271,7 +305,7 @@ export function SearchPage({
             )
           }
         >
-          {submitted
+          {submitted || kind || source
             ? '다른 표현을 사용하거나 미디어 종류와 디렉토리 필터를 바꿔 보세요.'
             : '서버의 디렉토리를 추가하고 색인을 시작하면 사진과 영상을 여기서 찾을 수 있어요.'}
         </Empty>

@@ -25,6 +25,14 @@ func openStore(dir string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS records(kind TEXT NOT NULL,id TEXT NOT NULL,body BLOB NOT NULL,PRIMARY KEY(kind,id));
+ CREATE INDEX IF NOT EXISTS catalog_asset_order ON records(
+   json_extract(CAST(body AS TEXT),'$.profile_id'),
+   julianday(json_extract(CAST(body AS TEXT),'$.updated_at')) DESC,id
+ ) WHERE kind='asset';
+ CREATE INDEX IF NOT EXISTS catalog_asset_source ON records(
+   json_extract(CAST(body AS TEXT),'$.source_id'),
+   json_extract(CAST(body AS TEXT),'$.profile_id')
+ ) WHERE kind='asset';
  PRAGMA user_version=1;`)
 	if err != nil {
 		_ = db.Close()

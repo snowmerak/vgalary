@@ -8,7 +8,7 @@ import { MediaDetail } from './MediaDetail';
 import { SearchPage } from './SearchPage';
 import { SettingsPage } from './SettingsPage';
 import { SourcesPage } from './SourcesPage';
-import type { Asset, Job, Page, Result, Session, SettingsEnvelope } from './types';
+import type { Job, Page, Result, Session, SettingsEnvelope } from './types';
 
 const navigation = [
   { id: 'search', label: '검색', icon: Search },
@@ -84,12 +84,10 @@ function Library({
   notify: (message: string, error?: boolean) => void;
 }) {
   const settings = useResource<SettingsEnvelope>('/settings');
-  const assets = useResource<Asset[]>('/assets');
   const jobs = useResource<Job[]>('/jobs', 3000);
   const [page, setPage] = useState<Page>(currentPage);
   const [selected, setSelected] = useState<Result | null>(null);
   const previousJobs = useRef('');
-  const refreshAssets = assets.refresh;
   const refreshSettings = settings.refresh;
   useEffect(() => {
     const changed = () => setPage(currentPage());
@@ -99,20 +97,23 @@ function Library({
   const jobSignature = JSON.stringify((jobs.data || []).map((job) => [job.id, job.status]));
   useEffect(() => {
     if (previousJobs.current && previousJobs.current !== jobSignature) {
-      refreshAssets();
       refreshSettings();
     }
     previousJobs.current = jobSignature;
-  }, [jobSignature, refreshAssets, refreshSettings]);
+  }, [jobSignature, refreshSettings]);
   const navigate = (value: Page) => {
     window.location.hash = value;
   };
   const refresh = () => {
     settings.refresh();
-    assets.refresh();
     jobs.refresh();
   };
   const sources = settings.data?.sources || [];
+  const catalogKey = JSON.stringify([
+    jobSignature,
+    settings.data?.active_profile,
+    sources.map((source) => source.id),
+  ]);
   const connected = !settings.error && !!settings.data;
   return (
     <div className="app-shell">
@@ -168,10 +169,9 @@ function Library({
           )}
           {page === 'search' && (
             <SearchPage
-              assets={assets.data}
               sources={sources}
-              error={assets.error}
-              refresh={assets.refresh}
+              refreshKey={catalogKey}
+              profileID={settings.data?.active_profile || ''}
               onSelect={setSelected}
               goSources={() => navigate('sources')}
             />
@@ -179,7 +179,8 @@ function Library({
           {page === 'sources' && (
             <SourcesPage
               sources={sources}
-              assets={assets.data || []}
+              refreshKey={catalogKey}
+              profileID={settings.data?.active_profile || ''}
               jobs={jobs.data || []}
               refresh={refresh}
               onScan={() => {
