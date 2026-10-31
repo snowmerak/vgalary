@@ -70,6 +70,22 @@ h1 {
   font-size: 13px;
   color: #65736a;
 }
+.app-preview {
+  margin: 36px 0 0;
+}
+.app-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #e3e9e3;
+  border-radius: 8px;
+}
+.app-preview figcaption {
+  margin-top: 10px;
+  color: #65736a;
+  font-size: 13px;
+  text-align: center;
+}
 section {
   border-top: 1px solid #e3e9e3;
   margin-top: 36px;

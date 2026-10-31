@@ -23,7 +23,7 @@ Pages의 Git 연동 프로젝트에서 아래 값을 사용한다.
 node scripts/build-distribution.mjs
 ```
 
-출력에는 `index.html`, `styles.css`, `404.html`, `_headers`, `robots.txt`, `install.ps1`, `install.sh`만 포함한다. Go 실행 파일, DB, 사용자 미디어와 비밀 환경 변수는 포함하지 않는다. 설치기 원본은 `scripts/install.ps1`, `scripts/install.sh`이며 게시용 사본은 빌드 때 생성한다. Pages 사이트는 앱의 `/api` 요청을 중계하거나 로컬 미디어를 받지 않는다.
+출력에는 `index.html`, `styles.css`, `404.html`, `_headers`, `robots.txt`, `install.ps1`, `install.sh`와 미리보기 이미지 `assets/main-demo.webp`를 포함한다. 미리보기는 임시 데이터로 촬영한 메인 화면을 너비 960px로 축소한 이미지다. Go 실행 파일, DB, 사용자 미디어와 비밀 환경 변수는 포함하지 않는다. 설치기 원본은 `scripts/install.ps1`, `scripts/install.sh`이며 게시용 사본은 빌드 때 생성한다. Pages 사이트는 앱의 `/api` 요청을 중계하거나 로컬 미디어를 받지 않는다.
 
 Pages의 [빌드 명령·출력 디렉토리](https://developers.cloudflare.com/pages/configuration/build-configuration/), [정적 응답 헤더](https://developers.cloudflare.com/pages/configuration/headers/), [커스텀 도메인](https://developers.cloudflare.com/pages/configuration/custom-domains/)은 Cloudflare 공식 문서를 따른다.
 

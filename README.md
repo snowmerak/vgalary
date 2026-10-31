@@ -4,6 +4,10 @@ A local image and video search app written in Go. vgalary scans folders and nest
 
 The UI is available in **English, Korean, Simplified Chinese, Traditional Chinese, and Japanese**. It follows your browser language on first use, with English as the fallback. Use the language selector to override it; your choice is stored in that browser. Switching languages preserves your search and unsaved settings. Filenames, paths, model IDs, and server diagnostics remain unchanged.
 
+![vgalary main page showing sample images, video timestamps, and an archive entry](docs/screenshots/main-demo.png)
+
+Captured from the actual UI in an isolated local session using fictional media metadata and original sample illustrations. No data from the running service was used.
+
 ## Requirements
 
 To build from source:

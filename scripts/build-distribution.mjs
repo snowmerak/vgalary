@@ -6,7 +6,14 @@ import { join } from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = join(root, ".deploy", "pages");
 await mkdir(output, { recursive: true });
-for (const name of ["index.html", "styles.css", "404.html", "_headers"])
+await mkdir(join(output, "assets"), { recursive: true });
+for (const name of [
+  "index.html",
+  "styles.css",
+  "404.html",
+  "_headers",
+  "assets/main-demo.webp",
+])
   await copyFile(join(root, "site", name), join(output, name));
 for (const name of ["install.sh", "install.ps1"])
   await copyFile(join(root, "scripts", name), join(output, name));
