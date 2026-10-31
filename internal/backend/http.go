@@ -93,6 +93,7 @@ func (a *App) HandlerWithOptions(options HTTPOptions) (http.Handler, error) {
 		writeJSON(w, 200, models)
 	})
 	mux.HandleFunc("POST /api/connections/test", a.testConnections)
+	mux.HandleFunc("GET /api/directories", listDirectories)
 	mux.HandleFunc("GET /api/sources", func(w http.ResponseWriter, r *http.Request) {
 		sources, err := a.Sources(r.Context())
 		if err != nil {

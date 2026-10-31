@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Folder, FolderPlus, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { api, post } from './api';
 import { Empty, Modal, Spinner } from './components';
+import { DirectoryPicker } from './DirectoryPicker';
 import { useActions } from './hooks';
 import { date, sourceName } from './utils';
 import type { Asset, Job, Source } from './types';
@@ -22,6 +23,7 @@ export function SourcesPage({
   notify: (message: string, error?: boolean) => void;
 }) {
   const [path, setPath] = useState('');
+  const [browsing, setBrowsing] = useState(false);
   const [remove, setRemove] = useState<Source | null>(null);
   const { run, pending } = useActions(notify);
   const add = (event: FormEvent) => {
@@ -56,6 +58,10 @@ export function SourcesPage({
             onChange={(event) => setPath(event.target.value)}
             required
           />
+          <button type="button" className="secondary" onClick={() => setBrowsing(true)}>
+            <Folder size={17} />
+            찾아보기
+          </button>
           <button className="primary" disabled={pending.has('add')}>
             {pending.has('add') ? <Spinner /> : <FolderPlus size={17} />}추가
           </button>
@@ -125,6 +131,16 @@ export function SourcesPage({
         <Empty icon={<FolderPlus size={32} />} title="아직 연결된 디렉토리가 없어요.">
           위에서 디렉토리를 추가해 첫 라이브러리를 만들어 보세요.
         </Empty>
+      )}
+      {browsing && (
+        <DirectoryPicker
+          initialPath={path}
+          onClose={() => setBrowsing(false)}
+          onSelect={(selected) => {
+            setPath(selected);
+            setBrowsing(false);
+          }}
+        />
       )}
       {remove && (
         <Modal title="디렉토리 등록을 제거할까요?" onClose={() => setRemove(null)} className="confirm-modal">
