@@ -67,7 +67,9 @@ The app runs on your own computer or server. You decide whether and how to expos
 
 ## Index and search
 
-In the UI, add a directory under **Directories**, start indexing, and check **Jobs** for progress. Search becomes available after a successful index. The library loads 24 items at a time through server-side pagination; use **Load more** for the next page.
+In the UI, add a directory under **Directories**, start indexing, and check **Jobs** for progress. Files become searchable as soon as their vectors and catalog metadata are saved, including during the first scan. An empty catalog returns an empty result; a canceled or incomplete scan keeps successfully saved files searchable. The library loads 24 items at a time through server-side pagination; use **Load more** for the next page.
+
+Search prefers the active profile when it has files matching the filters. Otherwise, it uses an available profile matching the current settings, or the profile with the most recently saved matching file. Each query uses one profile's model and collection; vectors from different profiles are never mixed.
 
 Equivalent PowerShell API calls:
 
@@ -84,7 +86,7 @@ $job = Invoke-RestMethod "$base/api/sources/$($source.id)/scan" -Method Post `
     -ContentType $jsonType -Body '{"force":false}'
 Invoke-RestMethod "$base/api/jobs/$($job.id)"
 
-# Search once the job status is succeeded.
+# Search while indexing; results include files already saved.
 Invoke-RestMethod "$base/api/search" -Method Post -ContentType $jsonType `
     -Body (@{ query = 'a blue cat toy held in a hand'; limit = 10 } | ConvertTo-Json)
 

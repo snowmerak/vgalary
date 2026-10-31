@@ -44,6 +44,8 @@ type fakeVectors struct {
 	mu           sync.Mutex
 	points       map[string][]float32
 	blockImage   atomic.Bool
+	imageCalls   atomic.Int32
+	blockAfter   atomic.Int32
 	entered      chan struct{}
 	unavailable  atomic.Bool
 	expectedAuth atomic.Value
@@ -66,7 +68,12 @@ func newFakeVectors(t *testing.T) *fakeVectors {
 				w.WriteHeader(400)
 				return
 			}
-			if _, isText := body.Input.(string); !isText && f.blockImage.Load() {
+			_, isText := body.Input.(string)
+			imageCall := int32(0)
+			if !isText {
+				imageCall = f.imageCalls.Add(1)
+			}
+			if !isText && (f.blockImage.Load() || (f.blockAfter.Load() > 0 && imageCall > f.blockAfter.Load())) {
 				select {
 				case f.entered <- struct{}{}:
 				default:
@@ -326,6 +333,15 @@ func TestNewProfileWaitsForAllSources(t *testing.T) {
 	}
 	if current != before {
 		t.Fatal("new profile activated before all roots were indexed")
+	}
+	results := searchTestAPI(t, app, SearchRequest{Query: "photo"})
+	if len(results) != 2 {
+		t.Fatal("existing search was interrupted by a pending profile")
+	}
+	for _, result := range results {
+		if result.Asset.ProfileID != before {
+			t.Fatal("search mixed vector spaces before profile switch")
+		}
 	}
 	if job := scanTestSource(t, app, sources[1]); job.Status != "succeeded" {
 		t.Fatal(job.Error)

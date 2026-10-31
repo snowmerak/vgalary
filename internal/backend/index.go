@@ -372,36 +372,6 @@ func (a *App) Search(ctx context.Context, request SearchRequest) ([]SearchResult
 	if request.MediaType != "" && request.MediaType != "image" && request.MediaType != "video" {
 		return nil, errors.New("invalid media_type")
 	}
-	var profileID string
-	if err := a.store.get(ctx, "meta", "active_profile", &profileID); err != nil {
-		return nil, errors.New("no active index; complete a source scan first")
-	}
-	var profile Profile
-	if err := a.store.get(ctx, "profile", profileID, &profile); err != nil {
-		return nil, err
-	}
-	cfg, err := resolve(profile.Settings)
-	// Credentials and endpoint settings can change without changing the vector space.
-	// Keep the previous model/profile when a new index is still being prepared.
-	if current, currentErr := resolve(a.Settings()); currentErr == nil {
-		currentID := current.profileID() + "_" + digest([]byte(current.QdrantURL + "/" + current.Qdrant.CollectionPrefix))[:8]
-		if currentID == profile.ID {
-			cfg = current
-			err = nil
-		}
-	}
-	if err != nil {
-		return nil, err
-	}
-	cfg.Model = profile.Model
-	remote := newRemote(cfg)
-	vector, err := remote.embedText(ctx, request.Query)
-	if err != nil {
-		return nil, err
-	}
-	if len(vector) != profile.Dimensions {
-		return nil, errors.New("query dimension does not match active index")
-	}
 	assets, err := listRecords[Asset](ctx, a.store, "asset")
 	if err != nil {
 		return nil, err
@@ -411,8 +381,69 @@ func (a *App) Search(ctx context.Context, request SearchRequest) ([]SearchResult
 		return nil, err
 	}
 	sourceMap := map[string]Source{}
-	for _, s := range sources {
-		sourceMap[s.ID] = s
+	for _, source := range sources {
+		sourceMap[source.ID] = source
+	}
+	var activeProfile string
+	if err := a.store.get(ctx, "meta", "active_profile", &activeProfile); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	current, currentErr := resolve(a.Settings())
+	var currentID string
+	if currentErr == nil {
+		currentID = current.profileID() + "_" + digest([]byte(current.QdrantURL + "/" + current.Qdrant.CollectionPrefix))[:8]
+	}
+	// Activation chooses the default vector space, but is not a search prerequisite.
+	// Only committed files from registered sources can select a profile. Keep one
+	// vector space per query; prefer the active one, then current settings, then
+	// the most recently committed available profile (stable ID breaks ties).
+	var selected *Asset
+	selectedRank := -1
+	for i := range assets {
+		asset := &assets[i]
+		if _, ok := sourceMap[asset.SourceID]; !ok || len(asset.Points) == 0 {
+			continue
+		}
+		if (request.SourceID != "" && asset.SourceID != request.SourceID) || (request.MediaType != "" && asset.MediaType != request.MediaType) {
+			continue
+		}
+		rank := 0
+		switch asset.ProfileID {
+		case activeProfile:
+			rank = 2
+		case currentID:
+			rank = 1
+		}
+		if selected == nil || rank > selectedRank || (rank == selectedRank && (asset.UpdatedAt.After(selected.UpdatedAt) || (asset.UpdatedAt.Equal(selected.UpdatedAt) && asset.ID < selected.ID))) {
+			selected, selectedRank = asset, rank
+		}
+	}
+	if selected == nil {
+		return []SearchResult{}, nil
+	}
+	var profile Profile
+	if err := a.store.get(ctx, "profile", selected.ProfileID, &profile); err != nil {
+		return nil, err
+	}
+	cfg, err := resolve(profile.Settings)
+	// Credentials and endpoint settings can change without changing the vector space.
+	// Keep the previous model/profile when a new index is still being prepared.
+	if currentErr == nil && currentID == profile.ID {
+		cfg = current
+		err = nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	cfg.Model = profile.Model
+	ctx = bindLog(ctx, slog.String("profile_id", profile.ID))
+	remote := newRemote(cfg)
+	vector, err := remote.embedText(ctx, request.Query)
+	if err != nil {
+		return nil, err
+	}
+	if len(vector) != profile.Dimensions {
+		return nil, errors.New("query dimension does not match search profile")
 	}
 	type candidate struct {
 		asset Asset
@@ -424,6 +455,9 @@ func (a *App) Search(ctx context.Context, request SearchRequest) ([]SearchResult
 			continue
 		}
 		if _, ok := sourceMap[asset.SourceID]; !ok {
+			continue
+		}
+		if (request.SourceID != "" && asset.SourceID != request.SourceID) || (request.MediaType != "" && asset.MediaType != request.MediaType) {
 			continue
 		}
 		for _, point := range asset.Points {
