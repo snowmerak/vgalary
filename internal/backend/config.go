@@ -41,7 +41,6 @@ type ProcessingSettings struct {
 	MaxEntryBytes             int64   `json:"max_entry_bytes"`
 	MaxExpandedBytes          int64   `json:"max_expanded_bytes"`
 	MaxEntries                int     `json:"max_entries"`
-	JobTimeoutSeconds         int     `json:"job_timeout_seconds"`
 	RequestTimeoutSeconds     int     `json:"request_timeout_seconds"`
 	ProcessTimeoutSeconds     int     `json:"process_timeout_seconds"`
 	ImageMaxDimension         int     `json:"image_max_dimension"`
@@ -52,7 +51,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		Embedding:  EmbeddingSettings{BaseURL: "http://127.0.0.1:18182/v1", Model: "embed", ModelRevision: "embeddinggemma-2-q8_0", QueryPrefix: "task: search result | query: "},
 		Qdrant:     QdrantSettings{URL: "http://127.0.0.1:6333", CollectionPrefix: "vgalary"},
-		Processing: ProcessingSettings{FFmpeg: "ffmpeg", FFprobe: "ffprobe", VideoFrameChangeThreshold: 0.12, MaxEntryBytes: 2 << 30, MaxExpandedBytes: 10 << 30, MaxEntries: 100000, JobTimeoutSeconds: 7200, RequestTimeoutSeconds: 180, ProcessTimeoutSeconds: 600, ImageMaxDimension: 1024, MaxImagePixels: 100000000},
+		Processing: ProcessingSettings{FFmpeg: "ffmpeg", FFprobe: "ffprobe", VideoFrameChangeThreshold: 0.12, MaxEntryBytes: 2 << 30, MaxExpandedBytes: 10 << 30, MaxEntries: 100000, RequestTimeoutSeconds: 180, ProcessTimeoutSeconds: 600, ImageMaxDimension: 1024, MaxImagePixels: 100000000},
 	}
 }
 
@@ -115,7 +114,7 @@ func resolve(s Settings) (resolvedSettings, error) {
 	if math.IsNaN(p.VideoFrameChangeThreshold) || math.IsInf(p.VideoFrameChangeThreshold, 0) || p.VideoFrameChangeThreshold < 0 || p.VideoFrameChangeThreshold > 1 {
 		return r, fmt.Errorf("video_frame_change_threshold must be between 0 and 1")
 	}
-	if p.FFmpeg == "" || p.FFprobe == "" || p.MaxEntryBytes < 1 || p.MaxExpandedBytes < p.MaxEntryBytes || p.MaxEntries < 1 || p.JobTimeoutSeconds < 1 || p.RequestTimeoutSeconds < 1 || p.ProcessTimeoutSeconds < 1 || p.ImageMaxDimension < 32 || p.ImageMaxDimension > 4096 || p.MaxImagePixels < 1 {
+	if p.FFmpeg == "" || p.FFprobe == "" || p.MaxEntryBytes < 1 || p.MaxExpandedBytes < p.MaxEntryBytes || p.MaxEntries < 1 || p.RequestTimeoutSeconds < 1 || p.ProcessTimeoutSeconds < 1 || p.ImageMaxDimension < 32 || p.ImageMaxDimension > 4096 || p.MaxImagePixels < 1 {
 		return r, fmt.Errorf("invalid processing limits")
 	}
 	return r, nil

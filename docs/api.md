@@ -72,13 +72,14 @@ Invoke-RestMethod "$base/api/settings" -Method Put `
 | `processing.max_entry_bytes` | 2 GiB. 단일 원본·압축·해제 항목 상한 |
 | `processing.max_expanded_bytes` | 10 GiB. 스캔 또는 다운로드의 누적 압축 해제량 상한 |
 | `processing.max_entries` | 100,000. 탐색 작업량·영상 키프레임 개수 상한. 깊이 상한은 없음 |
-| `processing.job_timeout_seconds` | 7,200초 |
 | `processing.request_timeout_seconds` | 외부 HTTP 요청당 180초 |
 | `processing.process_timeout_seconds` | FFmpeg/ffprobe 실행당 600초 |
 | `processing.image_max_dimension` | 1,024. 임베딩 전 이미지의 최대 변 길이 |
 | `processing.max_image_pixels` | 100,000,000. 이미지 디코딩 픽셀 상한 |
 
 환경 변수 참조를 지정했는데 값이 없거나 비어 있으면 오류다. 비밀 값의 직접 입력 필드는 없다. 설정 변경은 저장 직후 새 작업에 적용하고, 진행 중인 작업은 시작 시의 설정 스냅샷을 유지한다. 프로세스 환경의 값 변경은 재시작이 필요하다.
+
+전체 디렉토리 색인 작업에는 시간 제한을 적용하지 않는다. 이전 버전에서 저장한 `processing.job_timeout_seconds`는 현재 설정과 대기·재개 작업 모두에서 무시하며, API 응답이나 새 저장 값에는 포함하지 않는다. 개별 외부 HTTP 요청과 FFmpeg/ffprobe 실행에는 위 제한을 유지한다. 수동 취소·소스 제거·앱 종료로 작업을 중단할 수 있다. 이 동작은 새 버전의 서버를 실행한 이후 적용된다.
 
 기존 저장 설정에 `video_frame_change_threshold`가 없으면 앱 시작 시 기본값을 채운다. 명시적으로 저장한 `0`은 그대로 유지한다. 임계값과 비교 알고리즘 버전은 색인 프로필에 포함하므로 변경 후 소스를 스캔해야 검색 포인트가 바뀐다. 이전 프로필의 벡터를 새 정책의 완료 상태로 잘못 재사용하지 않는다. `0`은 기존 전체 프레임 프로필과 호환된다.
 

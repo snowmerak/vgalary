@@ -76,7 +76,6 @@ export interface Settings {
     max_entry_bytes: number;
     max_expanded_bytes: number;
     max_entries: number;
-    job_timeout_seconds: number;
     request_timeout_seconds: number;
     process_timeout_seconds: number;
     image_max_dimension: number;

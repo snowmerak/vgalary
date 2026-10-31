@@ -270,7 +270,8 @@ func (a *App) worker() {
 	}
 }
 func (a *App) runJob(job Job) {
-	ctx, cancel := context.WithTimeout(a.ctx, time.Duration(job.Settings.Processing.JobTimeoutSeconds)*time.Second)
+	// A scan has no overall deadline; individual remote calls and media processes do.
+	ctx, cancel := context.WithCancel(a.ctx)
 	a.mu.Lock()
 	// A queued job may have been canceled after the worker's initial snapshot.
 	var current Job

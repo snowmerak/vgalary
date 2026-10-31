@@ -232,6 +232,9 @@ export function SettingsPage({
           </section>
           <details className="advanced-settings">
             <summary>고급 처리 설정</summary>
+            <p className="hint">
+              전체 색인 작업에는 시간 제한이 없습니다. 개별 외부 요청과 미디어 처리에만 제한을 적용합니다.
+            </p>
             <div className="field-grid">
               <Field
                 label="FFmpeg 실행 파일"
@@ -248,7 +251,6 @@ export function SettingsPage({
                   ['max_entry_bytes', '항목별 최대 바이트'],
                   ['max_expanded_bytes', '누적 압축 해제 바이트'],
                   ['max_entries', '최대 처리 항목 수'],
-                  ['job_timeout_seconds', '작업 제한 시간 · 초'],
                   ['request_timeout_seconds', '외부 요청 제한 시간 · 초'],
                   ['process_timeout_seconds', '미디어 처리 제한 시간 · 초'],
                   ['image_max_dimension', '이미지 최대 변 길이 · px'],
