@@ -130,9 +130,17 @@ func (c *remoteClient) request(ctx context.Context, method, address, key, authHe
 }
 
 func (c *remoteClient) embed(ctx context.Context, input any) ([]float32, error) {
+	vectors, err := c.embedMany(ctx, input, 1)
+	if err != nil {
+		return nil, err
+	}
+	return vectors[0], nil
+}
+
+func (c *remoteClient) embedMany(ctx context.Context, input any, count int) ([][]float32, error) {
 	var out struct {
 		Data []struct {
-			Index     int       `json:"index"`
+			Index     *int      `json:"index"`
 			Embedding []float32 `json:"embedding"`
 		} `json:"data"`
 	}
@@ -140,27 +148,49 @@ func (c *remoteClient) embed(ctx context.Context, input any) ([]float32, error) 
 	if err != nil {
 		return nil, fmt.Errorf("embedding: %w", err)
 	}
-	if len(out.Data) != 1 || out.Data[0].Index != 0 || len(out.Data[0].Embedding) == 0 {
+	if len(out.Data) != count {
 		return nil, errors.New("embedding response count/index is invalid")
 	}
-	vector := out.Data[0].Embedding
-	var norm float64
-	for _, v := range vector {
-		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-			return nil, errors.New("embedding contains non-finite values")
+	vectors := make([][]float32, count)
+	for _, entry := range out.Data {
+		if entry.Index == nil || *entry.Index < 0 || *entry.Index >= count || vectors[*entry.Index] != nil || len(entry.Embedding) == 0 {
+			return nil, errors.New("embedding response count/index is invalid")
 		}
-		norm += float64(v) * float64(v)
+		var norm float64
+		for _, v := range entry.Embedding {
+			if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+				return nil, errors.New("embedding contains non-finite values")
+			}
+			norm += float64(v) * float64(v)
+		}
+		if norm == 0 {
+			return nil, errors.New("embedding is a zero vector")
+		}
+		vectors[*entry.Index] = entry.Embedding
 	}
-	if norm == 0 {
-		return nil, errors.New("embedding is a zero vector")
-	}
-	return vector, nil
+	return vectors, nil
 }
 func (c *remoteClient) embedText(ctx context.Context, text string) ([]float32, error) {
 	return c.embed(operationContext(ctx, "embedding.text", "embedding"), c.cfg.Embedding.QueryPrefix+text)
 }
 func (c *remoteClient) embedImage(ctx context.Context, jpeg []byte) ([]float32, error) {
-	return c.embed(operationContext(ctx, "embedding.image", "embedding"), []any{map[string]any{"content": []any{map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpeg)}}}}})
+	vectors, err := c.embedImages(ctx, [][]byte{jpeg})
+	if err != nil {
+		return nil, err
+	}
+	return vectors[0], nil
+}
+
+func (c *remoteClient) embedImages(ctx context.Context, images [][]byte) ([][]float32, error) {
+	if len(images) == 0 {
+		return nil, errors.New("embedding batch is empty")
+	}
+	input := make([]any, len(images))
+	for i, jpeg := range images {
+		input[i] = map[string]any{"content": []any{map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpeg)}}}}
+	}
+	ctx = bindLog(ctx, slog.Int("batch_size", len(images)))
+	return c.embedMany(operationContext(ctx, "embedding.image", "embedding"), input, len(images))
 }
 func (c *remoteClient) models(ctx context.Context) (any, error) {
 	ctx = operationContext(ctx, "embedding.models", "embedding")

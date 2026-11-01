@@ -102,7 +102,7 @@ func updateCounters(ctx context.Context, job *Job) {
 	}
 }
 func jobCounts(job *Job) []slog.Attr {
-	return []slog.Attr{slog.Int("discovered", job.Discovered), slog.Int("indexed", job.Indexed), slog.Int("reused", job.Skipped), slog.Int("embedding_calls", job.Embedded), slog.Int("cycles", job.Cycles), slog.Int("issue_count", job.IssueCount)}
+	return []slog.Attr{slog.Int("discovered", job.Discovered), slog.Int("indexed", job.Indexed), slog.Int("reused", job.Skipped), slog.Int("embedding_calls", job.EmbeddingRequests), slog.Int("embedded_images", job.Embedded), slog.Int("cycles", job.Cycles), slog.Int("issue_count", job.IssueCount)}
 }
 
 func emit(ctx context.Context, level slog.Level, event string, attrs ...slog.Attr) {

@@ -52,18 +52,26 @@ func (a *App) indexSource(ctx context.Context, job *Job) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(work) }()
-	// Bound vector reuse separately from decoded media. Nothing here is durable vector storage.
-	reused := map[string][]float32{}
+	// The scan owns a bounded buffer; durable vector storage remains in Qdrant.
+	batch := newIndexBatch(a, ctx, job, profile, remote)
+	defer batch.close()
 	report := walkSource(ctx, source, work, cfg.Processing, func(file discoveredFile) error {
 		job.Discovered++
 		updateCounters(ctx, job)
-		err := atStage(ctx, a.indexFile(ctx, source, file, work, profile, remote, job, reused))
+		plan, err := a.prepareFile(ctx, source, file, work, profile, remote, job)
+		if err == nil && plan != nil {
+			batch.addFile(plan)
+		}
+		err = atStage(ctx, err)
 		setStage(ctx, "catalog.progress")
 		if saveErr := a.store.put(ctx, "job", job.ID, job); saveErr != nil {
 			return fail(saveErr, nil, "catalog_write_failed", "catalog.progress", "sqlite")
 		}
 		return err
 	})
+	batch.flush()
+	report.Issues = append(report.Issues, batch.report.Issues...)
+	report.Complete = report.Complete && batch.report.Complete
 	job.Cycles = report.Cycles
 	job.IssueCount = len(report.Issues)
 	job.Issues = report.Issues[:min(len(report.Issues), 100)]
@@ -129,7 +137,7 @@ func (a *App) indexSource(ctx context.Context, job *Job) error {
 	return nil
 }
 
-func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile, work string, profile Profile, remote *remoteClient, job *Job, reused map[string][]float32) (resultErr error) {
+func (a *App) prepareFile(ctx context.Context, source Source, file discoveredFile, work string, profile Profile, remote *remoteClient, job *Job) (plan *fileIndexPlan, resultErr error) {
 	assetID := stableID(source.ID, file.Location, profile.ID)
 	ctx = bindLog(ctx, slog.String("asset_id", assetID), slog.String("relative_path", locationText(file.Location)))
 	if o := executionOf(ctx).observation; o != nil {
@@ -140,7 +148,7 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 	started, skipped := time.Now(), job.Skipped
 	defer func() {
 		updateCounters(ctx, job)
-		if resultErr == nil {
+		if resultErr == nil && plan == nil {
 			result := "indexed"
 			if job.Skipped > skipped {
 				result = "reused"
@@ -150,33 +158,33 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 		}
 	}()
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 	if err := a.store.get(ctx, "source", source.ID, &source); err != nil {
-		return err
+		return nil, err
 	}
 	if !source.Active {
-		return errors.New("source is removed")
+		return nil, errors.New("source is removed")
 	}
 	outerPath := filepath.Join(source.RootPath, file.Location.RelativePath)
 	outer, err := os.Stat(outerPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	original, err := os.Stat(file.Path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	setStage(ctx, "hash")
 	revision, err := hashFile(ctx, file.Path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	asset := Asset{ID: stableID(source.ID, file.Location, profile.ID), SourceID: source.ID, Location: file.Location, MediaType: mediaType(file.Path), Revision: revision, ProfileID: profile.ID, Collection: profile.Collection, Size: original.Size(), OuterSize: outer.Size(), OuterModTime: outer.ModTime().UnixNano(), SeenJob: job.ID, UpdatedAt: time.Now().UTC()}
 	var previous Asset
 	priorErr := a.store.get(ctx, "asset", asset.ID, &previous)
 	if priorErr != nil && !errors.Is(priorErr, sql.ErrNoRows) {
-		return priorErr
+		return nil, priorErr
 	}
 	if !job.Force && priorErr == nil && previous.Revision == revision {
 		// Qdrant may have been restored independently from the SQLite catalog.
@@ -186,16 +194,16 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 				allPresent = false
 				break
 			} else if err != nil {
-				return err
+				return nil, err
 			}
 		}
 		if allPresent {
 			asset.Points = previous.Points
 			if err := a.commitAsset(ctx, asset, nil); err != nil {
-				return err
+				return nil, err
 			}
 			job.Skipped++
-			return nil
+			return nil, nil
 		}
 	}
 	refs := []PointRef{{StreamIndex: 0}}
@@ -204,14 +212,14 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 	if !job.Force {
 		assets, err := listRecords[Asset](ctx, a.store, "asset")
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, candidate := range assets {
 			if candidate.ID != asset.ID && candidate.ProfileID == profile.ID && candidate.Revision == revision && candidate.MediaType == asset.MediaType && len(candidate.Points) > 0 {
 				if _, err := remote.vector(ctx, profile.Collection, candidate.Points[0].ID); errors.Is(err, errRemoteNotFound) {
 					continue
 				} else if err != nil {
-					return err
+					return nil, err
 				}
 				reuse = &candidate
 				refs = append([]PointRef(nil), candidate.Points...)
@@ -219,16 +227,24 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 			}
 		}
 	}
-	if asset.MediaType == "video" && reuse == nil {
-		framesDir, err := os.MkdirTemp(work, "frames-")
-		if err != nil {
-			return err
+	var framesDir string
+	defer func() {
+		if resultErr != nil && framesDir != "" {
+			_ = os.RemoveAll(framesDir)
 		}
-		defer func() { _ = os.RemoveAll(framesDir) }()
+	}()
+	if asset.MediaType == "video" && reuse == nil {
+		framesDir, err = os.MkdirTemp(work, "frames-")
+		if err != nil {
+			return nil, err
+		}
 		refs, images, err = videoFrames(ctx, file.Path, framesDir, remote.cfg.Processing)
 		if err != nil {
-			return err
+			return nil, err
 		}
+	}
+	if len(refs) == 0 {
+		return nil, errors.New("media has no embedding inputs")
 	}
 	priorPoints := map[string]bool{}
 	for _, point := range previous.Points {
@@ -242,86 +258,18 @@ func (a *App) indexFile(ctx context.Context, source Source, file discoveredFile,
 		}
 	}
 	if err := a.store.put(ctx, "cleanup", pending.ID, pending); err != nil {
-		return err
+		return nil, err
 	}
-	for i := range refs {
-		var jpeg []byte
-		var vector []float32
-		if reuse != nil {
-			vector, err = remote.vector(ctx, profile.Collection, reuse.Points[i].ID)
-			if err != nil {
-				return err
-			}
-			jpeg, _ = os.ReadFile(filepath.Join(a.dir, "thumbnails", reuse.Points[i].ID+".jpg"))
-		} else {
-			setStage(ctx, "image.decode")
-			jpeg, err = imageJPEG(images[i], remote.cfg.Processing)
-			if err != nil {
-				return err
-			}
-			cacheKey := digest(jpeg)
-			var ok bool
-			vector, ok = reused[cacheKey]
-			if !ok {
-				vector, err = remote.embedImage(ctx, jpeg)
-				if err != nil {
-					return err
-				}
-				job.Embedded++
-				updateCounters(ctx, job)
-				if len(reused) >= 64 {
-					clear(reused)
-				}
-				reused[cacheKey] = vector
-			}
-		}
-		if len(vector) != profile.Dimensions {
-			return errors.New("embedding vector dimension changed")
-		}
-		payload := map[string]any{"source_id": source.ID, "asset_id": asset.ID, "asset_revision": revision, "profile_id": profile.ID, "media_type": asset.MediaType, "relative_path": asset.Location.RelativePath, "archive_entries": asset.Location.ArchiveEntries}
-		if refs[i].TimestampMS != nil {
-			payload["timestamp_ms"] = *refs[i].TimestampMS
-			payload["pts"] = refs[i].PTS
-			payload["time_base"] = refs[i].TimeBase
-			payload["selection_kind"] = refs[i].SelectionKind
-			payload["stream_index"] = refs[i].StreamIndex
-			if refs[i].ChangeScore != nil {
-				payload["change_score"] = *refs[i].ChangeScore
-			}
-		}
-		if err := remote.upsert(ctx, profile.Collection, refs[i].ID, vector, payload); err != nil {
-			return err
-		}
-		if len(jpeg) > 0 {
-			if err := a.saveThumbnail(refs[i].ID, jpeg); err != nil {
-				return err
-			}
-		}
-		if err := a.store.put(ctx, "job", job.ID, job); err != nil {
-			return err
-		}
+	plan = &fileIndexPlan{ctx: ctx, source: source, file: file, asset: asset, original: original, refs: refs, images: images, reuse: reuse, framesDir: framesDir, remaining: len(refs), started: started}
+	if priorErr == nil {
+		plan.previous = &previous
 	}
-	asset.Points = refs
-	after, err := os.Stat(file.Path)
-	if err != nil {
-		return err
+	if o := executionOf(ctx).observation; o != nil {
+		o.mu.Lock()
+		plan.itemID = o.item
+		o.mu.Unlock()
 	}
-	if after.Size() != original.Size() || !after.ModTime().Equal(original.ModTime()) {
-		return errors.New("media changed during indexing")
-	}
-	if err := a.checkOriginal(asset, source); err != nil {
-		return err
-	}
-	var cleanup *cleanupTask
-	if priorErr == nil && previous.Revision != revision {
-		task := cleanupFor(previous, profile.Settings)
-		cleanup = &task
-	}
-	if err := a.commitAsset(ctx, asset, cleanup); err != nil {
-		return err
-	}
-	job.Indexed++
-	return nil
+	return plan, nil
 }
 func (a *App) commitAsset(ctx context.Context, asset Asset, cleanup *cleanupTask) error {
 	a.mu.Lock()

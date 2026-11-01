@@ -205,7 +205,7 @@ func (h *handler) WithGroup(name string) slog.Handler {
 
 // The allowlist intentionally rejects arbitrary objects, errors, URLs and bodies.
 // New event fields must be reviewed here as well as at their domain owner.
-const allowed = " event job_id source_id profile_id run_id request_id operation_id asset_id item_id cleanup_id stage operation dependency result reason error_code duration_ms stage_elapsed_ms last_progress_age_ms retry_delay_ms attempt attempts http_status exit_code discovered indexed reused embedding_calls cycles issue_count candidates selected threshold selection_kind archive_depth relative_path method route suppressed_count suppressed_total pending_count from_state to_state truncated listen_address "
+const allowed = " event job_id source_id profile_id run_id request_id operation_id asset_id item_id cleanup_id stage operation dependency result reason error_code duration_ms stage_elapsed_ms last_progress_age_ms retry_delay_ms attempt attempts http_status exit_code discovered indexed reused embedding_calls embedded_images batch_size cycles issue_count candidates selected threshold selection_kind archive_depth relative_path method route suppressed_count suppressed_total pending_count from_state to_state truncated listen_address "
 
 func (h *handler) Handle(_ context.Context, r slog.Record) error {
 	fields := map[string]any{"time": r.Time.UTC().Format(time.RFC3339Nano), "level": r.Level.String(), "msg": clip(r.Message, 512), "instance_id": h.output.instance}

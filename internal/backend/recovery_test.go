@@ -40,20 +40,24 @@ func TestEmbeddingRetryPreservesBearerHeader(t *testing.T) {
 }
 
 type fakeVectors struct {
-	server       *httptest.Server
-	mu           sync.Mutex
-	points       map[string][]float32
-	blockImage   atomic.Bool
-	imageCalls   atomic.Int32
-	blockAfter   atomic.Int32
-	entered      chan struct{}
-	unavailable  atomic.Bool
-	expectedAuth atomic.Value
+	server         *httptest.Server
+	mu             sync.Mutex
+	points         map[string][]float32
+	blockImage     atomic.Bool
+	imageCalls     atomic.Int32
+	blockAfter     atomic.Int32
+	batchSizes     []int
+	rejectBatch    atomic.Bool
+	wrongDimension atomic.Bool
+	releaseImage   chan struct{}
+	entered        chan struct{}
+	unavailable    atomic.Bool
+	expectedAuth   atomic.Value
 }
 
 func newFakeVectors(t *testing.T) *fakeVectors {
 	t.Helper()
-	f := &fakeVectors{points: map[string][]float32{}, entered: make(chan struct{}, 1)}
+	f := &fakeVectors{points: map[string][]float32{}, entered: make(chan struct{}, 1), releaseImage: make(chan struct{})}
 	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/embeddings" {
 			if expected := f.expectedAuth.Load(); expected != nil && r.Header.Get("Authorization") != expected.(string) {
@@ -69,8 +73,23 @@ func newFakeVectors(t *testing.T) *fakeVectors {
 				return
 			}
 			_, isText := body.Input.(string)
+			count := 1
 			imageCall := int32(0)
 			if !isText {
+				items, ok := body.Input.([]any)
+				if !ok || len(items) == 0 {
+					t.Error("expected non-empty multimodal input array")
+					w.WriteHeader(400)
+					return
+				}
+				count = len(items)
+				f.mu.Lock()
+				f.batchSizes = append(f.batchSizes, count)
+				f.mu.Unlock()
+				if f.rejectBatch.Load() && count > 1 {
+					w.WriteHeader(400)
+					return
+				}
 				imageCall = f.imageCalls.Add(1)
 			}
 			if !isText && (f.blockImage.Load() || (f.blockAfter.Load() > 0 && imageCall > f.blockAfter.Load())) {
@@ -78,10 +97,21 @@ func newFakeVectors(t *testing.T) *fakeVectors {
 				case f.entered <- struct{}{}:
 				default:
 				}
-				<-r.Context().Done()
-				return
+				select {
+				case <-r.Context().Done():
+					return
+				case <-f.releaseImage:
+				}
 			}
-			writeJSON(w, 200, map[string]any{"data": []any{map[string]any{"index": 0, "embedding": []float32{1, 2, 3}}}})
+			data := make([]any, count)
+			for i := range data {
+				vector := []float32{1, 2, 3}
+				if !isText && f.wrongDimension.Load() {
+					vector = []float32{1, 2}
+				}
+				data[i] = map[string]any{"index": i, "embedding": vector}
+			}
+			writeJSON(w, 200, map[string]any{"data": data})
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/points/query") {

@@ -54,23 +54,24 @@ type JobIssue struct {
 	Message  string `json:"message"`
 }
 type Job struct {
-	ID         string     `json:"id"`
-	SourceID   string     `json:"source_id"`
-	Status     string     `json:"status"`
-	Force      bool       `json:"force"`
-	Settings   Settings   `json:"settings"`
-	ProfileID  string     `json:"profile_id,omitempty"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	Discovered int        `json:"discovered"`
-	Indexed    int        `json:"indexed"`
-	Skipped    int        `json:"skipped"`
-	Embedded   int        `json:"embedded"`
-	Cycles     int        `json:"cycles"`
-	IssueCount int        `json:"issue_count"`
-	Issues     []JobIssue `json:"issues"`
-	Error      string     `json:"error,omitempty"`
+	ID                string     `json:"id"`
+	SourceID          string     `json:"source_id"`
+	Status            string     `json:"status"`
+	Force             bool       `json:"force"`
+	Settings          Settings   `json:"settings"`
+	ProfileID         string     `json:"profile_id,omitempty"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	Discovered        int        `json:"discovered"`
+	Indexed           int        `json:"indexed"`
+	Skipped           int        `json:"skipped"`
+	Embedded          int        `json:"embedded"`
+	EmbeddingRequests int        `json:"embedding_requests"`
+	Cycles            int        `json:"cycles"`
+	IssueCount        int        `json:"issue_count"`
+	Issues            []JobIssue `json:"issues"`
+	Error             string     `json:"error,omitempty"`
 }
 type SearchRequest struct {
 	Query     string `json:"query"`

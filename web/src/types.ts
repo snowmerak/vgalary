@@ -52,6 +52,7 @@ export interface Job {
   indexed: number;
   skipped: number;
   embedded: number;
+  embedding_requests: number;
   cycles: number;
   issue_count: number;
   error?: string;
@@ -73,6 +74,7 @@ export interface Settings {
     ffprobe: string;
     allow_keyframe_fallback: boolean;
     video_frame_change_threshold: number;
+    embedding_batch_size: number;
     max_entry_bytes: number;
     max_expanded_bytes: number;
     max_entries: number;

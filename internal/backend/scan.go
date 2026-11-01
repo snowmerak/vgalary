@@ -130,21 +130,23 @@ func hashFile(ctx context.Context, name string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+func (report *scanReport) issue(ctx context.Context, loc Location, code string, err error) {
+	report.Complete = false
+	report.Issues = append(report.Issues, JobIssue{Location: locationText(loc), Code: code, Message: err.Error()})
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	attrs := append(itemFields(ctx), slog.String("error_code", code), slog.String("relative_path", locationText(loc)), slog.Int("archive_depth", len(loc.ArchiveEntries)))
+	var detail *failure
+	if errors.As(err, &detail) {
+		attrs = append(attrs, failureFields(err)...)
+	}
+	emit(ctx, slog.LevelWarn, "file.failed", attrs...)
+}
+
 func walkSource(ctx context.Context, source Source, workDir string, p ProcessingSettings, visit func(discoveredFile) error) scanReport {
 	report := scanReport{Complete: true, Issues: []JobIssue{}}
-	issue := func(loc Location, code string, err error) {
-		report.Complete = false
-		report.Issues = append(report.Issues, JobIssue{Location: locationText(loc), Code: code, Message: err.Error()})
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		attrs := append(itemFields(ctx), slog.String("error_code", code), slog.String("relative_path", locationText(loc)), slog.Int("archive_depth", len(loc.ArchiveEntries)))
-		var detail *failure
-		if errors.As(err, &detail) {
-			attrs = append(attrs, failureFields(err)...)
-		}
-		emit(ctx, slog.LevelWarn, "file.failed", attrs...)
-	}
+	issue := func(loc Location, code string, err error) { report.issue(ctx, loc, code, err) }
 	root, err := realPath(source.RootPath)
 	if err != nil {
 		issue(Location{}, "source_unavailable", err)

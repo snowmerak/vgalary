@@ -101,6 +101,10 @@ Invoke-RestMethod "$base/api/sources/$($source.id)" -Method Delete
 
 An indexing job has **no overall time limit**. Individual external HTTP requests default to 180 seconds and FFmpeg/ffprobe processes to 600 seconds. You can cancel jobs manually. Previous `job_timeout_seconds` settings are ignored.
 
+Indexing sends up to **100 images or selected video frames per embedding request** by default, batching across files and nested archives. Change **Settings → Indexing embedding batch size** (`processing.embedding_batch_size`, 1–1000); saving applies to newly started jobs, while queued/running jobs retain their settings snapshot. Use `1` for single-image requests. Changing the batch size does not require a new index profile. Search queries remain individual requests.
+
+The final partial batch is always sent. Identical preprocessed images reuse a vector, and large batches flush early to keep buffered JPEG data within 64 MiB. A file becomes searchable only after all its selected frames are saved. Jobs show embedded image count separately from embedding request count. The server must support the [llama.cpp multimodal embeddings input array](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#post-v1embeddings-openai-compatible-embeddings-api); unsupported or malformed batch responses fail the affected files without silently switching to individual requests. Previously saved files remain available.
+
 ## Video indexing
 
 Videos are embedded frame by frame. Search results group matches by video and return the best matching frame with `timestamp_ms` and a display timestamp. For H.264/H.265, the backend examines packet NAL units to select IDR frames. Codecs without IDR frames, such as AV1 and VP9, require explicit `processing.allow_keyframe_fallback` to use keyframes instead; `selection_kind` identifies the selection method. Fallback is disabled by default.

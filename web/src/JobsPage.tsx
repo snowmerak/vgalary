@@ -99,7 +99,8 @@ export function JobsPage({
                   [t('발견'), job.discovered],
                   [t('색인'), job.indexed],
                   [t('재사용'), job.skipped],
-                  [t('임베딩 호출'), job.embedded],
+                  [t('임베딩 이미지'), job.embedded],
+                  [t('임베딩 호출'), job.embedding_requests],
                   [t('순환 건너뜀'), job.cycles],
                   [t('오류'), job.issue_count],
                 ].map(([label, value]) => (

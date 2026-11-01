@@ -53,6 +53,22 @@ func (s *Store) get(ctx context.Context, kind, id string, out any) error {
 	if err := s.db.QueryRowContext(ctx, `SELECT body FROM records WHERE kind=? AND id=?`, kind, id).Scan(&b); err != nil {
 		return err
 	}
+	return decodeRecord(b, out)
+}
+
+// Older saved settings, profile snapshots and durable jobs predate batching.
+// Apply defaults only while loading durable records; explicit API zero is invalid.
+func decodeRecord(b []byte, out any) error {
+	switch record := out.(type) {
+	case *Settings:
+		record.Processing.EmbeddingBatchSize = DefaultSettings().Processing.EmbeddingBatchSize
+	case *Profile:
+		record.Settings.Processing.EmbeddingBatchSize = DefaultSettings().Processing.EmbeddingBatchSize
+	case *Job:
+		record.Settings.Processing.EmbeddingBatchSize = DefaultSettings().Processing.EmbeddingBatchSize
+	case *cleanupTask:
+		record.Settings.Processing.EmbeddingBatchSize = DefaultSettings().Processing.EmbeddingBatchSize
+	}
 	return json.Unmarshal(b, out)
 }
 func listRecords[T any](ctx context.Context, s *Store, kind string) ([]T, error) {
@@ -68,7 +84,7 @@ func listRecords[T any](ctx context.Context, s *Store, kind string) ([]T, error)
 			return nil, err
 		}
 		var item T
-		if err := json.Unmarshal(b, &item); err != nil {
+		if err := decodeRecord(b, &item); err != nil {
 			return nil, fmt.Errorf("decode %s: %w", kind, err)
 		}
 		result = append(result, item)

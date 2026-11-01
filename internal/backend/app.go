@@ -317,6 +317,7 @@ func (a *App) runJob(job Job) {
 	job.Indexed = 0
 	job.Skipped = 0
 	job.Embedded = 0
+	job.EmbeddingRequests = 0
 	job.Cycles = 0
 	job.IssueCount = 0
 	job.Issues = []JobIssue{}

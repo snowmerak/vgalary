@@ -93,7 +93,7 @@ HTTP 요청 ID는 서버에서 생성하며 외부 헤더를 그대로 식별자
 | `file.processed` | debug | 파일 처리 종료 시 한 번. 색인·재사용 결과와 소요 시간 |
 | `media.frames_selected` | debug | 영상당 후보·선택 프레임 수와 정책 요약. 개별 프레임 로그 없음 |
 | `dependency.retry` | warn | `clients.go`. 실제 재시도 대기 직전, 원인·시도·대기 시간 기록 |
-| `dependency.finished` / `media.finished` | debug | 논리적인 외부 호출·프로세스의 최종 결과와 소요 시간. 최종 실패의 warn/error 책임은 상위 작업·파일·요청 경계에 둠 |
+| `dependency.finished` / `media.finished` | debug | 논리적인 외부 호출·프로세스의 최종 결과와 소요 시간. 이미지 임베딩에는 실제 입력 수 `batch_size`를 포함. 작업 카운터의 `embedding_calls`는 배치 요청 횟수, `embedded_images`는 정상 응답 이미지 수. 최종 실패의 warn/error 책임은 상위 작업·파일·요청 경계에 둠 |
 | `profile.ready` / `profile.waiting` / `profile.activated` | info | `index.go`. 소스 준비와 검색 프로필 활성화, 다른 소스 대기 구분 |
 | `cleanup.failed` / `cleanup.recovered` | warn / info | `app.go`. 영속 정리 작업의 실패와 이후 복구. 반복 실패는 집계 |
 | `http.failed` | error | HTTP 처리 경계의 5xx. API 실패를 최종적으로 소유한 곳에서 기록 |

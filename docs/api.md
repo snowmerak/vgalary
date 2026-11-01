@@ -71,6 +71,7 @@ Invoke-RestMethod "$base/api/settings" -Method Put `
 | `processing.ffmpeg`, `processing.ffprobe` | 실행 파일 이름 또는 경로 |
 | `processing.allow_keyframe_fallback` | `false`. IDR 개념이 없는 코덱에 키프레임 대체 허용 |
 | `processing.video_frame_change_threshold` | `0.12`. 정규화 평균 RGB 차이의 선택 임계값(0~1). `0`은 필터 비활성화 |
+| `processing.embedding_batch_size` | `100`. 색인 임베딩 요청당 이미지·선택 프레임 수 상한(1~1000). `1`은 개별 요청 |
 | `processing.max_entry_bytes` | 2 GiB. 단일 원본·압축·해제 항목 상한 |
 | `processing.max_expanded_bytes` | 10 GiB. 스캔 또는 다운로드의 누적 압축 해제량 상한 |
 | `processing.max_entries` | 100,000. 탐색 작업량·영상 키프레임 개수 상한. 깊이 상한은 없음 |
@@ -91,7 +92,11 @@ Invoke-RestMethod "$base/api/settings" -Method Put `
 
 등록 요청은 `{"root_path":"D:/media"}`다. 경로는 앱 서버 기준이며, 앱 데이터 디렉토리와 겹칠 수 없다. 같은 실제 디렉토리의 중복 등록을 거절한다. 상하위 루트는 별개 소스로 등록할 수 있고, 제거는 선택한 소스에만 적용한다.
 
-작업은 `queued → running → succeeded / failed / canceled`로 전이한다. 작업 ID, 발견·색인·재사용 개수, 이미지 임베딩 호출 수 `embedded`, 순환 수 `cycles`, 파일별 `issues`를 조회할 수 있다. `embedded`에는 연결/차원 확인을 위한 텍스트 요청은 포함하지 않는다. 오류 상세는 최대 100개와 전체 오류 수를 저장한다. `force:true`는 같은 내용도 다시 임베딩한다.
+작업은 `queued → running → succeeded / failed / canceled`로 전이한다. 작업 ID, 발견·색인·재사용 개수, 임베딩한 이미지 수 `embedded`, 이미지 임베딩 요청 횟수 `embedding_requests`, 순환 수 `cycles`, 파일별 `issues`를 조회할 수 있다. `embedded`는 정상 검증된 응답의 이미지 입력 수이고 `embedding_requests`는 배치 요청 횟수다. 실패한 배치도 요청 횟수에 포함하지만 HTTP 재시도는 별도 배치로 세지 않는다. 연결/차원 확인의 텍스트 요청과 검색어 임베딩은 두 카운터에 포함하지 않는다. 과거 작업에 요청 횟수가 없으면 0으로 표시한다. 오류 상세는 최대 100개와 전체 오류 수를 저장한다. `force:true`는 같은 내용도 다시 임베딩한다.
+
+색인 작업은 파일·압축 경계를 넘어 이미지와 선택된 영상 프레임을 모아 `/embeddings`의 `input` 배열로 요청한다. 배열의 각 원소는 이미지 하나를 담은 `content` 객체이며 이미지마다 별도 벡터를 받는다. 마지막 잔여 배치도 요청한다. 동일 JPEG는 배치 내·최근 벡터 캐시에서 재사용하고, JPEG 버퍼는 64 MiB에 도달하기 전에 조기 전송하므로 실제 요청 개수는 설정값보다 작을 수 있다. 응답은 `index`로 재배열하고 개수·누락·중복·범위·유한수·영벡터·차원을 검증한 후에만 포인트를 저장한다. 배치 실패는 해당 파일의 실패로 남기며 기존 색인을 지우지 않는다. 지원하지 않는 서버에 자동으로 개별 요청을 반복하지 않는다.
+
+배치 크기는 프로필 ID에 포함하지 않으므로 변경만으로 재임베딩하지 않는다. 저장 즉시 새 작업에 적용하고, 대기·진행 중인 작업은 시작 시 스냅샷을 유지한다. 과거 SQLite 설정·프로필·작업에 필드가 없으면 기본 100을 적용한다. API에서 명시한 0과 범위 밖 값은 오류다. 검색과 연결 테스트는 배치 대기 없이 기존 개별 요청을 사용한다.
 
 원본 내용 해시·프로필이 같으면 기존 Qdrant 포인트 존재를 확인해 임베딩을 생략한다. 다른 위치에 있는 동일 미디어도 벡터를 재사용하되 위치와 포인트 ID는 별도로 유지한다. 최초 성공 스캔 후 새 소스를 추가한 경우에는 같은 프로필로 바로 검색에 합류한다.
 

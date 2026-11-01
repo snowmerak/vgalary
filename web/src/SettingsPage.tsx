@@ -12,6 +12,9 @@ function Field({
   value,
   onChange,
   type = 'text',
+  min,
+  max,
+  step,
   children,
 }: {
   label: string;
@@ -19,12 +22,22 @@ function Field({
   value: string | number;
   onChange: (value: string) => void;
   type?: 'text' | 'url' | 'number';
+  min?: number;
+  max?: number;
+  step?: number;
   children?: ReactNode;
 }) {
   return (
     <label className="field">
       <span>{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input
+        type={type}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(event) => onChange(event.target.value)}
+      />
       {help && <small>{help}</small>}
       {children}
     </label>
@@ -98,6 +111,18 @@ export function SettingsPage({
                 value={form.embedding.base_url}
                 onChange={(value) => update('embedding', 'base_url', value)}
                 help={t('예: http://127.0.0.1:18182/v1')}
+              />
+              <Field
+                label={t('색인 임베딩 배치 크기')}
+                type="number"
+                min={1}
+                max={1000}
+                step={1}
+                value={form.processing.embedding_batch_size}
+                onChange={(value) => update('processing', 'embedding_batch_size', Number(value))}
+                help={t(
+                  '한 요청에 보낼 이미지·영상 프레임 수입니다. 기본 100, 범위 1~1000. 저장 후 새 색인 작업부터 적용됩니다.',
+                )}
               />
               <label className="field">
                 <span>{t('모델')}</span>

@@ -38,6 +38,7 @@ type ProcessingSettings struct {
 	FFprobe                   string  `json:"ffprobe"`
 	AllowKeyframeFallback     bool    `json:"allow_keyframe_fallback"`
 	VideoFrameChangeThreshold float64 `json:"video_frame_change_threshold"`
+	EmbeddingBatchSize        int     `json:"embedding_batch_size"`
 	MaxEntryBytes             int64   `json:"max_entry_bytes"`
 	MaxExpandedBytes          int64   `json:"max_expanded_bytes"`
 	MaxEntries                int     `json:"max_entries"`
@@ -51,7 +52,7 @@ func DefaultSettings() Settings {
 	return Settings{
 		Embedding:  EmbeddingSettings{BaseURL: "http://127.0.0.1:18182/v1", Model: "embed", ModelRevision: "embeddinggemma-2-q8_0", QueryPrefix: "task: search result | query: "},
 		Qdrant:     QdrantSettings{URL: "http://127.0.0.1:6333", CollectionPrefix: "vgalary"},
-		Processing: ProcessingSettings{FFmpeg: "ffmpeg", FFprobe: "ffprobe", VideoFrameChangeThreshold: 0.12, MaxEntryBytes: 2 << 30, MaxExpandedBytes: 10 << 30, MaxEntries: 100000, RequestTimeoutSeconds: 180, ProcessTimeoutSeconds: 600, ImageMaxDimension: 1024, MaxImagePixels: 100000000},
+		Processing: ProcessingSettings{FFmpeg: "ffmpeg", FFprobe: "ffprobe", VideoFrameChangeThreshold: 0.12, EmbeddingBatchSize: 100, MaxEntryBytes: 2 << 30, MaxExpandedBytes: 10 << 30, MaxEntries: 100000, RequestTimeoutSeconds: 180, ProcessTimeoutSeconds: 600, ImageMaxDimension: 1024, MaxImagePixels: 100000000},
 	}
 }
 
@@ -111,6 +112,9 @@ func resolve(s Settings) (resolvedSettings, error) {
 		return r, fmt.Errorf("invalid collection prefix")
 	}
 	p := s.Processing
+	if p.EmbeddingBatchSize < 1 || p.EmbeddingBatchSize > 1000 {
+		return r, fmt.Errorf("embedding_batch_size must be between 1 and 1000")
+	}
 	if math.IsNaN(p.VideoFrameChangeThreshold) || math.IsInf(p.VideoFrameChangeThreshold, 0) || p.VideoFrameChangeThreshold < 0 || p.VideoFrameChangeThreshold > 1 {
 		return r, fmt.Errorf("video_frame_change_threshold must be between 0 and 1")
 	}

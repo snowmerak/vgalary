@@ -66,6 +66,11 @@ func TestSearchDuringFirstScan(t *testing.T) {
 				f.blockAfter.Store(committed)
 			}
 			app := fakeApp(t, f)
+			settings := app.Settings()
+			settings.Processing.EmbeddingBatchSize = 1
+			if err := app.SaveSettings(context.Background(), settings); err != nil {
+				t.Fatal(err)
+			}
 			root := t.TempDir()
 			writeTestImage(t, filepath.Join(root, "a.jpg"))
 			// Distinct pixels prevent the second file from reusing the first vector.
